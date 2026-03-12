@@ -3,7 +3,6 @@ import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
   advanceFromRoundResult,
-  getVisiblePlayerIds,
   isEvilRole,
   resolveMissionResult,
   resolveTeamVote,
