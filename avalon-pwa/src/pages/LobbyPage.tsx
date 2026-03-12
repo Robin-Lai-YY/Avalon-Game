@@ -36,7 +36,11 @@ export function LobbyPage({ roomId, playerId, isHost, onBack, onEnterRoleReveal 
     if (room?.state === 'ROLE_REVEAL') onEnterRoleReveal?.()
   }, [room?.state, onEnterRoleReveal])
 
-  const myReady = room?.players?.[playerId]?.ready ?? false
+  const players = room?.players ?? {}
+  const playerIds = Object.keys(players).sort()
+  const allReady = playerIds.length >= 5 && playerIds.every((id) => players[id]?.ready === true)
+  const notReadyNames = playerIds.filter((id) => !players[id]?.ready).map((id) => players[id]?.name ?? id)
+  const myReady = players[playerId]?.ready ?? false
 
   function handleReady() {
     setPlayerReady(roomId, playerId, !myReady).catch(() => {
@@ -102,14 +106,17 @@ export function LobbyPage({ roomId, playerId, isHost, onBack, onEnterRoleReveal 
       {startError && <p className="text-red-600 text-sm mb-2">{startError}</p>}
       {isHost && (
         <>
+          {!allReady && notReadyNames.length > 0 && (
+            <p className="text-amber-700 text-sm mb-2">等待准备：{notReadyNames.join('、')}</p>
+          )}
           <p className="text-sm text-gray-600 mb-1">Host only:</p>
           <button
             type="button"
             onClick={handleStartGame}
-            disabled={starting}
+            disabled={starting || !allReady}
             className="w-full bg-green-600 text-white rounded px-4 py-2 disabled:opacity-50"
           >
-            {starting ? 'Starting…' : 'Start Game'}
+            {starting ? 'Starting…' : allReady ? 'Start Game' : '等待所有人准备'}
           </button>
         </>
       )}

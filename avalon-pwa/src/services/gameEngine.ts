@@ -148,6 +148,11 @@ export async function startGame(roomId: string): Promise<void> {
   if (count < 5 || count > 10) {
     throw new Error('Need 5 to 10 players to start')
   }
+  const notReady = playerIds.filter((id) => !players[id]?.ready)
+  if (notReady.length > 0) {
+    const names = notReady.map((id) => players[id]?.name ?? id).join('、')
+    throw new Error(`请等待所有人准备。未准备：${names}`)
+  }
   const shuffledRoles = shuffle(generateRoles(count))
   const rolesObj: Record<string, string> = {}
   const updates: Record<string, unknown> = {
