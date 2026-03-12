@@ -92,6 +92,25 @@ npm run playwright:install   # 首次需安装 Chromium
 npm run test:e2e            # 需先 npm run dev 或复用已有 5173 服务
 ```
 
+## GitHub Pages 部署（让他人访问）
+
+1. **开启 Pages**  
+   仓库 **Settings** → **Pages** → **Build and deployment** 里 **Source** 选 **GitHub Actions**。
+
+2. **配置构建用密钥**  
+   **Settings** → **Secrets and variables** → **Actions** → **New repository secret**，把本地 `avalon-pwa/.env` 里用到的变量逐个添加（名称与下面一致）：
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_DATABASE_URL`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+
+3. **触发部署**  
+   推送 `main` 后会自动跑 **Deploy to GitHub Pages** workflow，部署完成后访问：
+   **https://Robin-Lai-YY.github.io/Avalon-Game/**
+
 ## 许可证
 
 Private / 未指定开源协议。
