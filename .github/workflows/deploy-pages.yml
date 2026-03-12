@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: avalon-pwa/package-lock.json
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-pages-artifact@3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: avalon-pwa/dist
 
@@ -48,4 +48,4 @@ jobs:
     needs: build
     steps:
       - id: deployment
-        uses: actions/deploy-pages@4
+        uses: actions/deploy-pages@v4
