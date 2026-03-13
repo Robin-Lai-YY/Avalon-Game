@@ -80,6 +80,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
     votes: {},
     missionVotes: {},
     history: [],
+    teamVoteHistory: [],
     score: { good: 0, evil: 0 },
     result: null,
   })
@@ -113,6 +114,34 @@ export async function joinRoom(
     role: '',
   })
   return { playerId }
+}
+
+/**
+ * Reconnect to a room as an existing player (e.g. after refresh). Room may be in any state.
+ * @returns roomId, playerId, isHost, and current room state for restoring the correct view.
+ */
+export async function reconnectRoom(roomId: string, playerId: string): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+}> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) {
+    throw new Error('Room not found')
+  }
+  const room = snapshot.val()
+  const players = room.players ?? {}
+  if (!players[playerId]) {
+    throw new Error('You are not in this room')
+  }
+  return {
+    roomId,
+    playerId,
+    isHost: room.hostId === playerId,
+    state: room.state ?? 'LOBBY',
+  }
 }
 
 /**
@@ -245,10 +274,11 @@ export async function rotateLeader(roomId: string): Promise<void> {
 
 /**
  * Saves the leader's selected team and advances to TEAM_VOTING.
- * Room must be in TEAM_SELECTION. Clears votes and missionVotes for the new proposal.
+ * Room must be in TEAM_SELECTION. Only the current leader may call this (verified server-side).
  */
 export async function saveTeam(
   roomId: string,
+  callerPlayerId: string,
   selectedPlayerIds: string[]
 ): Promise<void> {
   const roomRef = ref(db, `rooms/${roomId}`)
@@ -259,7 +289,13 @@ export async function saveTeam(
     throw new Error('Not in team selection')
   }
   const players = room.players ?? {}
-  const playerCount = Object.keys(players).length
+  const playerIds = Object.keys(players).sort()
+  const leaderIndex = Number(room.leaderIndex) ?? 0
+  const leaderId = playerIds[leaderIndex]
+  if (leaderId !== callerPlayerId) {
+    throw new Error('Only the leader can submit the team')
+  }
+  const playerCount = playerIds.length
   const round = Number(room.round) ?? 1
   const requiredSize = getMissionTeamSize(round, playerCount)
   if (selectedPlayerIds.length !== requiredSize) {
@@ -317,16 +353,35 @@ export async function resolveTeamVote(roomId: string): Promise<void> {
     if (v === 'approve') approve++
     else if (v === 'reject') reject++
   }
+  const round = Number(room.round) ?? 1
+  const leaderIndex = Number(room.leaderIndex) ?? 0
+  const team = room.team
+  const teamIds: string[] = Array.isArray(team)
+    ? team
+    : team && typeof team === 'object'
+      ? Object.keys(team)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((k) => (team as Record<string, string>)[k])
+          .filter(Boolean)
+      : []
+  const teamVoteHistory = [...(room.teamVoteHistory ?? [])]
+  teamVoteHistory.push({
+    round,
+    leaderIndex,
+    teamIds: [...teamIds],
+    votes: { ...votes },
+    result: approve > reject ? 'approved' : 'rejected',
+  })
   if (approve > reject) {
-    await update(roomRef, { state: 'MISSION_VOTING' })
+    await update(roomRef, { state: 'MISSION_VOTING', teamVoteHistory, votes: {} })
   } else {
-    const currentIndex = Number(room.leaderIndex) ?? 0
-    const nextIndex = (currentIndex + 1) % playerIds.length
+    const nextIndex = (leaderIndex + 1) % playerIds.length
     await update(roomRef, {
       state: 'TEAM_SELECTION',
       leaderIndex: nextIndex,
       team: {},
       votes: {},
+      teamVoteHistory,
     })
   }
 }
@@ -382,8 +437,14 @@ export async function resolveMissionResult(roomId: string): Promise<void> {
   if (missionFailed) score.evil = (score.evil ?? 0) + 1
   else score.good = (score.good ?? 0) + 1
 
+  const successCount = teamIds.length - failCount
   const history = [...(room.history ?? [])]
-  history.push({ round, success: !missionFailed })
+  history.push({
+    round,
+    success: !missionFailed,
+    successCount,
+    failCount,
+  })
 
   const goodWins = score.good ?? 0
   const evilWins = score.evil ?? 0

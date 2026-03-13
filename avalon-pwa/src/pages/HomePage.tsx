@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { createRoom, joinRoom } from '../services/gameEngine'
+import { createRoom, joinRoom, reconnectRoom } from '../services/gameEngine'
+import { loadSession } from '../utils/sessionStorage'
 
 type HomePageProps = {
   onEnterLobby: (roomId: string, playerId: string, isHost: boolean) => void
+  onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string) => void
 }
 
-export function HomePage({ onEnterLobby }: HomePageProps) {
+export function HomePage({ onEnterLobby, onReconnect }: HomePageProps) {
   const [name, setName] = useState('')
   const [roomCode, setRoomCode] = useState('')
   const [joinName, setJoinName] = useState('')
@@ -51,7 +53,23 @@ export function HomePage({ onEnterLobby }: HomePageProps) {
       const { playerId } = await joinRoom(code, joinName.trim())
       onEnterLobby(code, playerId, false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to join room')
+      const msg = e instanceof Error ? e.message : 'Failed to join room'
+      if (msg === 'Game has already started' && onReconnect) {
+        const session = loadSession()
+        if (session?.roomId === code && session?.playerId) {
+          try {
+            const { roomId, playerId, isHost, state } = await reconnectRoom(code, session.playerId)
+            onReconnect(roomId, playerId, isHost, state)
+            return
+          } catch {
+            setError('游戏已开始。若你刚掉线，请刷新页面自动恢复；否则无法加入已开始的对局。')
+            return
+          }
+        }
+        setError('游戏已开始。若你刚掉线，请刷新页面自动恢复；否则无法加入已开始的对局。')
+        return
+      }
+      setError(msg)
     } finally {
       setLoading(false)
     }

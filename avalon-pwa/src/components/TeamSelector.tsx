@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export type TeamSelectorProps = {
   /** Ordered player ids (e.g. sorted). Leader is playerOrder[leaderIndex]. */
@@ -29,6 +29,10 @@ export function TeamSelector({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const leaderId = playerOrder[leaderIndex]
   const leaderName = leaderId ? players[leaderId]?.name ?? leaderId : '—'
+
+  useEffect(() => {
+    if (disabled) setSelected(new Set())
+  }, [disabled])
 
   function toggle(id: string) {
     if (disabled) return

@@ -16,6 +16,7 @@ import { VotePanel } from '../components/VotePanel'
 import { MissionPanel } from '../components/MissionPanel'
 import { AssassinPanel } from '../components/AssassinPanel'
 import { RolePeekToggle } from '../components/RolePeekToggle'
+import { VoteHistoryPanel } from '../components/VoteHistoryPanel'
 import { ResultPage } from './ResultPage'
 import { getMissionTeamSize } from '../utils/missionRules'
 
@@ -30,6 +31,14 @@ type RoomData = {
   missionVotes?: Record<string, 'success' | 'fail'>
   missionSuccess?: boolean
   score?: { good: number; evil: number }
+  history?: Array<{ round: number; success: boolean; successCount?: number; failCount?: number }>
+  teamVoteHistory?: Array<{
+    round: number
+    leaderIndex: number
+    teamIds: string[]
+    votes: Record<string, 'approve' | 'reject'>
+    result: 'approved' | 'rejected'
+  }>
 }
 
 type GamePageProps = {
@@ -70,6 +79,20 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   const teamSize = getMissionTeamSize(round, playerOrder.length)
   const isLeader = playerOrder[leaderIndex] === playerId
 
+  const voteHistoryEl = (
+    <VoteHistoryPanel
+      teamVoteHistory={room.teamVoteHistory ?? []}
+      missionHistory={(room.history ?? []).map((h) => ({
+        round: h.round,
+        success: h.success,
+        successCount: h.successCount,
+        failCount: h.failCount,
+      }))}
+      players={players}
+      playerOrder={playerOrder}
+    />
+  )
+
   function teamIdsFromRoom(r: RoomData): string[] {
     const t = r.team
     if (Array.isArray(t)) return t
@@ -96,8 +119,9 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const myMissionVote = room.missionVotes?.[playerId] ?? null
     const myRole = room.roles?.[playerId] ?? ''
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
+      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
         <RolePeekToggle room={room} playerId={playerId} />
+        {voteHistoryEl}
         <MissionPanel
           isOnMission={isOnMission}
           myVote={myMissionVote}
@@ -114,6 +138,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     return (
       <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-4">
         <RolePeekToggle room={room} playerId={playerId} />
+        {voteHistoryEl}
         <h2 className="text-xl font-semibold">Mission Result</h2>
         <p className={`text-lg font-bold ${success ? 'text-green-600' : 'text-red-600'}`}>
           {success ? '✔ SUCCESS' : '✗ FAIL'}
@@ -150,8 +175,9 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const targetIds = playerOrder.filter((id) => id !== assassinId)
     const isAssassin = roles[playerId] === 'ASSASSIN'
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
+      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
         <RolePeekToggle room={room} playerId={playerId} />
+        {voteHistoryEl}
         <AssassinPanel
           assassinId={assassinId}
           players={players}
@@ -167,8 +193,9 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const teamIds = teamIdsFromRoom(room)
     const myVote = room.votes?.[playerId] ?? null
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
+      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
         <RolePeekToggle room={room} playerId={playerId} />
+        {voteHistoryEl}
         <VotePanel
           teamIds={teamIds}
           players={players}
@@ -181,8 +208,9 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
 
   if (room.state !== 'TEAM_SELECTION') {
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto">
+      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
         <RolePeekToggle room={room} playerId={playerId} />
+        {voteHistoryEl}
         <div className="flex flex-col items-center justify-center flex-1">
           <p className="text-gray-600">State: {room.state}</p>
         </div>
@@ -194,7 +222,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     setSaveError('')
     setSaving(true)
     try {
-      await saveTeam(roomId, selectedIds)
+      await saveTeam(roomId, playerId, selectedIds)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to save team')
     } finally {
@@ -204,10 +232,11 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
 
   return (
     <div
-      className="min-h-screen flex flex-col p-4 max-w-md mx-auto"
+      className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3"
       data-testid={isLeader ? 'team-selector-leader' : 'team-selector'}
     >
       <RolePeekToggle room={room} playerId={playerId} />
+      {voteHistoryEl}
       {saveError && <p className="text-red-600 text-sm mb-2">{saveError}</p>}
       <TeamSelector
         playerOrder={playerOrder}
