@@ -31,40 +31,39 @@ export function MissionPanel({
 
   if (!isOnMission) {
     return (
-      <div className="flex flex-col gap-4">
-        <h2 className="text-xl font-semibold">Mission Members Only</h2>
-        <p className="text-gray-600">You are not on this mission. Wait for mission members to vote.</p>
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">本轮未出任务</h2>
+        <p className="text-gray-600">等待任务成员投票。</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-xl font-semibold">Mission Members Only</h2>
-      <p className="text-lg">Choose Mission Result</p>
+    <div className="flex flex-col gap-5">
+      <h2 className="text-sm font-semibold text-gray-700">选择任务结果</h2>
       {myVote != null ? (
-        <p className="text-gray-600">You voted: {myVote === 'success' ? 'Success' : 'Fail'}</p>
+        <p className="text-gray-600 font-medium">你已投：{myVote === 'success' ? '成功' : '失败'}</p>
       ) : (
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <button
             type="button"
             onClick={() => handleVote('success')}
             disabled={submitting}
-            className="flex-1 bg-green-600 text-white rounded px-4 py-2 disabled:opacity-50"
+            className="flex-1 min-h-[48px] bg-green-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
           >
-            Success
+            成功
           </button>
           {canVoteFail ? (
             <button
               type="button"
               onClick={() => handleVote('fail')}
               disabled={submitting}
-              className="flex-1 bg-red-600 text-white rounded px-4 py-2 disabled:opacity-50"
+              className="flex-1 min-h-[48px] bg-red-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
             >
-              Fail
+              失败
             </button>
           ) : (
-            <p className="text-gray-500 text-sm self-center">Good can only vote Success</p>
+            <p className="text-gray-500 text-sm self-center py-2">好人只能投成功</p>
           )}
         </div>
       )}

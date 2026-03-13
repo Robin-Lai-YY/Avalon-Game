@@ -64,59 +64,61 @@ export function LobbyPage({ roomId, playerId, isHost, onBack, onEnterRoleReveal 
 
   if (!room) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <p>Loading room…</p>
+      <div className="min-h-screen flex items-center justify-center p-5">
+        <p className="text-gray-500">加载房间…</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto animate-fade-in">
+    <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto animate-fade-in gap-6">
       <button
         type="button"
         onClick={onBack}
-        className="self-start text-blue-600 underline mb-4"
+        className="self-start min-h-[44px] flex items-center text-blue-600 font-medium -ml-1"
       >
-        Back
+        ← 返回
       </button>
-      <p className="text-lg font-mono font-semibold mb-2" data-testid="room-code">
-        Room Code: {roomId}
-      </p>
-      <div className="mb-4 p-2 bg-white rounded inline-block">
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">房间码</p>
+        <p className="text-xl font-mono font-bold" data-testid="room-code">{roomId}</p>
+      </div>
+      <div className="p-3 bg-white rounded-xl border border-gray-200 inline-block self-start">
         <img
           src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?room=${roomId}` : '')}`}
           alt="Scan to join room"
           width={120}
           height={120}
-          className="block"
+          className="block rounded-lg"
         />
-        <p className="text-xs text-gray-600 mt-1">Scan to join</p>
+        <p className="text-xs text-gray-500 mt-2">扫码加入</p>
       </div>
-      <h2 className="text-xl font-semibold mb-2">Players</h2>
-      <div className="border-t border-b border-gray-300 py-2 mb-4">
-        <PlayerList players={room.players ?? {}} />
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">玩家</h2>
+        <div className="px-4 pb-4">
+          <PlayerList players={room.players ?? {}} />
+        </div>
       </div>
       <button
         type="button"
         onClick={handleReady}
-        className={`w-full rounded px-4 py-2 mb-4 ${myReady ? 'bg-gray-500' : 'bg-blue-600'} text-white`}
+        className={`w-full min-h-[48px] rounded-xl px-4 py-3 font-semibold ${myReady ? 'bg-gray-500' : 'bg-blue-600'} text-white active:opacity-90 transition-opacity`}
       >
-        {myReady ? 'Not ready' : 'Ready'}
+        {myReady ? '取消准备' : '准备'}
       </button>
-      {startError && <p className="text-red-600 text-sm mb-2">{startError}</p>}
+      {startError && <p className="text-red-600 text-sm">{startError}</p>}
       {isHost && (
         <>
           {!allReady && notReadyNames.length > 0 && (
-            <p className="text-amber-700 text-sm mb-2">等待准备：{notReadyNames.join('、')}</p>
+            <p className="text-amber-700 text-sm">等待准备：{notReadyNames.join('、')}</p>
           )}
-          <p className="text-sm text-gray-600 mb-1">Host only:</p>
           <button
             type="button"
             onClick={handleStartGame}
             disabled={starting || !allReady}
-            className="w-full bg-green-600 text-white rounded px-4 py-2 disabled:opacity-50"
+            className="w-full min-h-[48px] bg-green-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
           >
-            {starting ? 'Starting…' : allReady ? 'Start Game' : '等待所有人准备'}
+            {starting ? '开始中…' : allReady ? '开始游戏' : '等待所有人准备'}
           </button>
         </>
       )}

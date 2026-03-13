@@ -458,19 +458,21 @@ export async function resolveMissionResult(roomId: string): Promise<void> {
   } else {
     updates.state = 'ROUND_RESULT'
     updates.missionSuccess = !missionFailed
+    updates.roundResultAck = {}
   }
   await update(roomRef, updates)
 }
 
 /**
- * Advances from ROUND_RESULT to next round (TEAM_SELECTION). Rotates leader so next round has a new leader (by join order).
+ * Advances from ROUND_RESULT to next round (TEAM_SELECTION). Rotates leader.
+ * Idempotent: no-op if state is not ROUND_RESULT (e.g. already advanced).
  */
 export async function advanceFromRoundResult(roomId: string): Promise<void> {
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) throw new Error('Room not found')
   const room = snapshot.val()
-  if (room.state !== 'ROUND_RESULT') throw new Error('Not in round result')
+  if (room.state !== 'ROUND_RESULT') return
   const round = Number(room.round) ?? 1
   const nextRound = round + 1
   if (nextRound > 5) throw new Error('Game has no more rounds')
@@ -484,7 +486,29 @@ export async function advanceFromRoundResult(roomId: string): Promise<void> {
     leaderIndex: nextLeader,
     team: {},
     votes: {},
+    roundResultAck: {},
   })
+}
+
+/**
+ * Records that this player has acknowledged the round result. When all players have acked, advances to next round.
+ * Call this when the user taps "继续" on ROUND_RESULT screen.
+ */
+export async function ackRoundResult(roomId: string, playerId: string): Promise<void> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const ackRef = ref(db, `rooms/${roomId}/roundResultAck/${playerId}`)
+  await set(ackRef, true)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) return
+  const room = snapshot.val()
+  if (room.state !== 'ROUND_RESULT') return
+  const players = room.players ?? {}
+  const playerIds = Object.keys(players).sort()
+  const acks = room.roundResultAck ?? {}
+  const ackCount = playerIds.filter((id) => acks[id] === true).length
+  if (ackCount >= playerIds.length) {
+    await advanceFromRoundResult(roomId)
+  }
 }
 
 /**

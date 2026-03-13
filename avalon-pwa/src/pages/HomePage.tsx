@@ -76,52 +76,59 @@ export function HomePage({ onEnterLobby, onReconnect }: HomePageProps) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
-      <h1 className="text-2xl font-bold mb-6">Avalon Assistant</h1>
-      {error && <p className="text-red-600 mb-2">{error}</p>}
-      <div className="flex flex-col gap-4 w-full max-w-xs">
-        <input
-          type="text"
-          placeholder="Your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="border rounded px-3 py-2"
-          aria-label="Your name for create"
-        />
-        <button
-          type="button"
-          onClick={handleCreateRoom}
-          disabled={loading}
-          className="bg-blue-600 text-white rounded px-4 py-2 disabled:opacity-50 transition-opacity duration-200"
-        >
-          Create Room
-        </button>
-        <hr className="border-gray-300" />
-        <input
-          type="text"
-          placeholder="Room code"
-          value={roomCode}
-          onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-          className="border rounded px-3 py-2 font-mono uppercase"
-          aria-label="Room code"
-          maxLength={6}
-        />
-        <input
-          type="text"
-          placeholder="Your name"
-          value={joinName}
-          onChange={(e) => setJoinName(e.target.value)}
-          className="border rounded px-3 py-2"
-          aria-label="Your name for join"
-        />
-        <button
-          type="button"
-          onClick={handleJoinRoom}
-          disabled={loading}
-          className="bg-green-600 text-white rounded px-4 py-2 disabled:opacity-50"
-        >
-          Join Room
-        </button>
+    <div className="min-h-screen flex flex-col items-center justify-center p-5 safe-area">
+      <h1 className="text-2xl font-bold mb-2 text-gray-800">Avalon</h1>
+      <p className="text-gray-500 text-sm mb-6">组队与任务助手</p>
+      {error && <p className="text-red-600 text-sm mb-3 w-full max-w-xs text-center">{error}</p>}
+      <div className="flex flex-col gap-5 w-full max-w-xs">
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium text-gray-600">创建房间</label>
+          <input
+            type="text"
+            placeholder="你的名字"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="min-h-[48px] border border-gray-300 rounded-xl px-4 py-3 text-base"
+            aria-label="Your name for create"
+          />
+          <button
+            type="button"
+            onClick={handleCreateRoom}
+            disabled={loading}
+            className="min-h-[48px] bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+          >
+            创建房间
+          </button>
+        </div>
+        <hr className="border-gray-200" />
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium text-gray-600">加入房间</label>
+          <input
+            type="text"
+            placeholder="房间码"
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+            className="min-h-[48px] border border-gray-300 rounded-xl px-4 py-3 font-mono uppercase text-base"
+            aria-label="Room code"
+            maxLength={6}
+          />
+          <input
+            type="text"
+            placeholder="你的名字"
+            value={joinName}
+            onChange={(e) => setJoinName(e.target.value)}
+            className="min-h-[48px] border border-gray-300 rounded-xl px-4 py-3 text-base"
+            aria-label="Your name for join"
+          />
+          <button
+            type="button"
+            onClick={handleJoinRoom}
+            disabled={loading}
+            className="min-h-[48px] bg-green-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+          >
+            加入房间
+          </button>
+        </div>
       </div>
     </div>
   )

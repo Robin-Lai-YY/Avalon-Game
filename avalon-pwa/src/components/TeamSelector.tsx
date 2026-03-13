@@ -50,34 +50,39 @@ export function TeamSelector({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-lg font-semibold">Round: {round}</p>
-      <p className="text-lg font-semibold">Leader: {leaderName}</p>
-      <p className="text-lg">Select Team ({teamSize})</p>
-      <ul className="list-none p-0 space-y-2">
-        {playerOrder.map((id) => (
-          <li key={id} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id={`team-${id}`}
-              checked={selected.has(id)}
-              onChange={() => toggle(id)}
-              disabled={disabled || (!selected.has(id) && selected.size >= teamSize)}
-              className="w-4 h-4"
-            />
-            <label htmlFor={`team-${id}`} className="cursor-pointer select-none">
-              {players[id]?.name ?? id}
-            </label>
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-col gap-5">
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">回合</p>
+        <p className="text-xl font-bold text-gray-800">第 {round} 轮</p>
+        <p className="text-sm text-gray-600 mt-1">队长：{leaderName}</p>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-gray-700 mb-3">选择任务队伍（选 {teamSize} 人）</p>
+        <ul className="list-none p-0 space-y-0">
+          {playerOrder.map((id) => (
+            <li key={id} className="tap-row border-b border-gray-100 last:border-0">
+              <label htmlFor={`team-${id}`} className="flex items-center gap-3 cursor-pointer w-full">
+                <input
+                  type="checkbox"
+                  id={`team-${id}`}
+                  checked={selected.has(id)}
+                  onChange={() => toggle(id)}
+                  disabled={disabled || (!selected.has(id) && selected.size >= teamSize)}
+                  className="w-6 h-6 rounded border-gray-300 flex-shrink-0"
+                />
+                <span className="font-medium text-gray-800">{players[id]?.name ?? id}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
       <button
         type="button"
         onClick={handleConfirm}
         disabled={disabled || selected.size !== teamSize}
-        className="w-full bg-blue-600 text-white rounded px-4 py-2 disabled:opacity-50"
+        className="w-full min-h-[48px] bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
       >
-        Confirm Team
+        确认队伍
       </button>
     </div>
   )

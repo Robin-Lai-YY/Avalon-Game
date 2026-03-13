@@ -35,28 +35,39 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
 
   if (!room) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <p>Loading…</p>
+      <div className="min-h-screen flex items-center justify-center p-5">
+        <p className="text-gray-500">加载中…</p>
       </div>
     )
   }
 
-  const winner = room.result === 'good' ? 'GOOD' : 'EVIL'
+  const isGoodWin = room.result === 'good'
   const history = room.history ?? []
   const score = room.score ?? { good: 0, evil: 0 }
   const players = room.players ?? {}
   const playerOrder = Object.keys(players).sort()
 
   return (
-    <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-6 animate-fade-in">
-      <h1 className="text-2xl font-bold text-center">GAME OVER</h1>
-      <p className={`text-xl font-bold text-center ${room.result === 'good' ? 'text-green-600' : 'text-red-600'}`}>
-        {winner} TEAM WINS
-      </p>
-      <div className="border-t border-b border-gray-300 py-2">
-        <p className="font-semibold">Final Score</p>
-        <p>Good: {score.good}</p>
-        <p>Evil: {score.evil}</p>
+    <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-6 animate-fade-in">
+      <h1 className="text-xl font-bold text-center text-gray-600 pt-2">游戏结束</h1>
+      <div
+        className={`rounded-2xl p-6 text-center animate-result-reveal ${
+          isGoodWin ? 'bg-green-50 border-2 border-green-300' : 'bg-red-50 border-2 border-red-300'
+        }`}
+      >
+        <p className={`text-2xl font-bold ${isGoodWin ? 'text-green-700' : 'text-red-700'}`}>
+          {isGoodWin ? '好人赢了' : '坏人赢了'}
+        </p>
+        <p className={`mt-1 text-base ${isGoodWin ? 'text-green-600' : 'text-red-600'}`}>
+          {isGoodWin ? 'Good wins' : 'Evil wins'}
+        </p>
+      </div>
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">最终比分</h2>
+        <div className="flex justify-between text-lg">
+          <span className="text-green-700 font-medium">好人 {score.good}</span>
+          <span className="text-red-700 font-medium">坏人 {score.evil}</span>
+        </div>
       </div>
       <VoteHistoryPanel
         teamVoteHistory={room.teamVoteHistory ?? []}
@@ -69,16 +80,17 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
         players={players}
         playerOrder={playerOrder}
       />
-      <div>
-        <h2 className="text-lg font-semibold mb-2">Round History</h2>
-        <ul className="list-none p-0 space-y-1">
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">回合记录</h2>
+        <ul className="list-none p-0 space-y-2">
           {history.map((h, i) => (
-            <li key={i}>
-              Round {h.round}: {h.success ? '✔ Success' : '✗ Fail'}
+            <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 border-b border-gray-100 last:border-0">
+              <span className="text-gray-700 font-medium">第 {h.round} 轮</span>
+              <span className={h.success ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                {h.success ? '✔ 成功' : '✗ 失败'}
+              </span>
               {typeof h.successCount === 'number' && typeof h.failCount === 'number' && (
-                <span className="text-gray-500 text-sm ml-1">
-                  （{h.successCount} 成功 / {h.failCount} 失败）
-                </span>
+                <span className="text-gray-400 text-sm">（{h.successCount} 成功 / {h.failCount} 失败）</span>
               )}
             </li>
           ))}
@@ -87,9 +99,9 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
       <button
         type="button"
         onClick={onPlayAgain}
-        className="w-full bg-blue-600 text-white rounded px-4 py-2 mt-4"
+        className="w-full min-h-[48px] bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold active:opacity-90 transition-opacity"
       >
-        Play Again
+        再玩一局
       </button>
     </div>
   )

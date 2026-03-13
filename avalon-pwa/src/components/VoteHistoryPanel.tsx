@@ -36,17 +36,17 @@ export function VoteHistoryPanel({
   }
 
   return (
-    <div className="rounded-lg border border-gray-300 bg-gray-50 overflow-hidden">
+    <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full px-3 py-2 text-left text-sm font-medium text-gray-700 flex justify-between items-center"
+        className="w-full min-h-[44px] px-4 py-3 text-left text-sm font-medium text-gray-700 flex justify-between items-center active:bg-gray-100 transition-colors"
       >
         <span>投票与任务记录</span>
-        <span className="text-gray-500">{open ? '▼' : '▶'}</span>
+        <span className="text-gray-500 text-xs">{open ? '收起' : '展开'}</span>
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-3 text-sm">
+        <div className="px-4 pb-4 pt-1 space-y-4 text-sm animate-slide-up">
           {teamVoteHistory.length > 0 && (
             <div>
               <h4 className="font-semibold text-gray-700 mb-1">组队投票</h4>

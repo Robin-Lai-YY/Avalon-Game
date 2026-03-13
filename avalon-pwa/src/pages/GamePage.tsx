@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
-  advanceFromRoundResult,
+  ackRoundResult,
   isEvilRole,
   resolveMissionResult,
   resolveTeamVote,
@@ -39,6 +39,7 @@ type RoomData = {
     votes: Record<string, 'approve' | 'reject'>
     result: 'approved' | 'rejected'
   }>
+  roundResultAck?: Record<string, boolean>
 }
 
 type GamePageProps = {
@@ -66,8 +67,8 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
 
   if (!room) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <p>Loading…</p>
+      <div className="min-h-screen flex items-center justify-center p-5">
+        <p className="text-gray-500">加载中…</p>
       </div>
     )
   }
@@ -119,7 +120,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const myMissionVote = room.missionVotes?.[playerId] ?? null
     const myRole = room.roles?.[playerId] ?? ''
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
+      <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-5">
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <MissionPanel
@@ -135,32 +136,58 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   if (room.state === 'ROUND_RESULT') {
     const success = room.missionSuccess === true
     const score = room.score ?? { good: 0, evil: 0 }
+    const acks = room.roundResultAck ?? {}
+    const playerIds = Object.keys(room.players ?? {}).sort()
+    const ackCount = playerIds.filter((id) => acks[id] === true).length
+    const totalCount = playerIds.length
+    const iHaveAcked = acks[playerId] === true
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-4">
+      <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-6">
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
-        <h2 className="text-xl font-semibold">Mission Result</h2>
-        <p className={`text-lg font-bold ${success ? 'text-green-600' : 'text-red-600'}`}>
-          {success ? '✔ SUCCESS' : '✗ FAIL'}
-        </p>
-        <h3 className="text-lg font-semibold">Score</h3>
-        <p>Good: {score.good}</p>
-        <p>Evil: {score.evil}</p>
-        <button
-          type="button"
-          onClick={async () => {
-            setRoundResultSaving(true)
-            try {
-              await advanceFromRoundResult(roomId)
-            } finally {
-              setRoundResultSaving(false)
-            }
-          }}
-          disabled={roundResultSaving}
-          className="w-full bg-blue-600 text-white rounded px-4 py-2 disabled:opacity-50"
+        <div
+          className={`rounded-2xl p-6 text-center animate-result-reveal ${
+            success
+              ? 'bg-green-50 border-2 border-green-200 animate-success-pulse'
+              : 'bg-red-50 border-2 border-red-200 animate-fail-shake'
+          }`}
         >
-          {roundResultSaving ? 'Continuing…' : 'Continue'}
-        </button>
+          <p className={`text-2xl font-bold ${success ? 'text-green-700' : 'text-red-700'}`}>
+            {success ? '✔ 任务成功' : '✗ 任务失败'}
+          </p>
+          <p className={`mt-1 text-base ${success ? 'text-green-600' : 'text-red-600'}`}>
+            {success ? 'Mission Success' : 'Mission Failed'}
+          </p>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 section-spacing">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">当前比分</h3>
+          <div className="flex justify-between text-lg">
+            <span className="text-green-700 font-medium">好人 {score.good}</span>
+            <span className="text-red-700 font-medium">坏人 {score.evil}</span>
+          </div>
+        </div>
+        {iHaveAcked ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-100 p-4 text-center text-gray-600">
+            <p className="font-medium">已确认，等待其他人…</p>
+            <p className="text-sm mt-1">{ackCount}/{totalCount} 已点继续</p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={async () => {
+              setRoundResultSaving(true)
+              try {
+                await ackRoundResult(roomId, playerId)
+              } finally {
+                setRoundResultSaving(false)
+              }
+            }}
+            disabled={roundResultSaving}
+            className="w-full min-h-[48px] bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+          >
+            {roundResultSaving ? '提交中…' : '继续'}
+          </button>
+        )}
       </div>
     )
   }
@@ -175,7 +202,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const targetIds = playerOrder.filter((id) => id !== assassinId)
     const isAssassin = roles[playerId] === 'ASSASSIN'
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
+      <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-5">
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <AssassinPanel
@@ -193,7 +220,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const teamIds = teamIdsFromRoom(room)
     const myVote = room.votes?.[playerId] ?? null
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
+      <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-5">
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <VotePanel
@@ -208,7 +235,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
 
   if (room.state !== 'TEAM_SELECTION') {
     return (
-      <div className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3">
+      <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-5">
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <div className="flex flex-col items-center justify-center flex-1">
@@ -232,7 +259,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
 
   return (
     <div
-      className="min-h-screen flex flex-col p-4 max-w-md mx-auto gap-3"
+      className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-5"
       data-testid={isLeader ? 'team-selector-leader' : 'team-selector'}
     >
       <RolePeekToggle room={room} playerId={playerId} />
