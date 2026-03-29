@@ -68,7 +68,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   if (!room) {
     return (
       <div className="min-h-screen flex items-center justify-center p-5">
-        <p className="text-gray-500">加载中…</p>
+        <p className="text-slate-400">加载中…</p>
       </div>
     )
   }
@@ -146,29 +146,29 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <div
-          className={`rounded-2xl p-6 text-center animate-result-reveal ${
+          className={`rounded-2xl p-6 text-center animate-result-reveal border-2 ${
             success
-              ? 'bg-green-50 border-2 border-green-200 animate-success-pulse'
-              : 'bg-red-50 border-2 border-red-200 animate-fail-shake'
+              ? 'bg-emerald-950/40 border-emerald-500/40 avalon-card-glow-good animate-success-pulse'
+              : 'bg-red-950/40 border-red-500/40 avalon-card-glow-evil animate-fail-shake'
           }`}
         >
-          <p className={`text-2xl font-bold ${success ? 'text-green-700' : 'text-red-700'}`}>
+          <p className={`text-2xl font-bold ${success ? 'text-emerald-400' : 'text-red-400'}`}>
             {success ? '✔ 任务成功' : '✗ 任务失败'}
           </p>
-          <p className={`mt-1 text-base ${success ? 'text-green-600' : 'text-red-600'}`}>
+          <p className={`mt-1 text-base ${success ? 'text-emerald-300/90' : 'text-red-300/90'}`}>
             {success ? 'Mission Success' : 'Mission Failed'}
           </p>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 section-spacing">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">当前比分</h3>
+        <div className="avalon-card p-4 section-spacing">
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">当前比分</h3>
           <div className="flex justify-between text-lg">
-            <span className="text-green-700 font-medium">好人 {score.good}</span>
-            <span className="text-red-700 font-medium">坏人 {score.evil}</span>
+            <span className="text-emerald-400 font-medium">好人 {score.good}</span>
+            <span className="text-red-400 font-medium">坏人 {score.evil}</span>
           </div>
         </div>
         {iHaveAcked ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-100 p-4 text-center text-gray-600">
-            <p className="font-medium">已确认，等待其他人…</p>
+          <div className="avalon-card p-4 text-center text-slate-400">
+            <p className="font-medium text-slate-300">已确认，等待其他人…</p>
             <p className="text-sm mt-1">{ackCount}/{totalCount} 已点继续</p>
           </div>
         ) : (
@@ -239,7 +239,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
         <RolePeekToggle room={room} playerId={playerId} />
         {voteHistoryEl}
         <div className="flex flex-col items-center justify-center flex-1">
-          <p className="text-gray-600">State: {room.state}</p>
+          <p className="text-slate-400">State: {room.state}</p>
         </div>
       </div>
     )
@@ -264,7 +264,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     >
       <RolePeekToggle room={room} playerId={playerId} />
       {voteHistoryEl}
-      {saveError && <p className="text-red-600 text-sm mb-2">{saveError}</p>}
+      {saveError && <p className="text-red-400 text-sm mb-2">{saveError}</p>}
       <TeamSelector
         playerOrder={playerOrder}
         players={players}

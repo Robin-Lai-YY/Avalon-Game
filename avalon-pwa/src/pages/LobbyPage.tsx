@@ -83,7 +83,8 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
   const players = room?.players ?? {}
   const playerIds = Object.keys(players).sort()
   const rawExpected = room?.expectedPlayerCount
-  const hasFixedExpected = rawExpected != null && rawExpected !== ''
+  const hasFixedExpected =
+    rawExpected != null && String(rawExpected).trim() !== ''
   const expectedCount = hasFixedExpected ? Number(rawExpected) : 5
   const previewCount = hasFixedExpected
     ? expectedCount
@@ -146,7 +147,7 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
   if (!room) {
     return (
       <div className="min-h-screen flex items-center justify-center p-5">
-        <p className="text-gray-500">加载房间…</p>
+        <p className="text-slate-400">加载房间…</p>
       </div>
     )
   }
@@ -156,15 +157,17 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
       <button
         type="button"
         onClick={onBack}
-        className="self-start min-h-[44px] flex items-center text-blue-600 font-medium -ml-1"
+        className="self-start min-h-[44px] flex items-center text-blue-400 font-medium -ml-1"
       >
         ← 返回
       </button>
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">房间码</p>
-        <p className="text-xl font-mono font-bold" data-testid="room-code">{roomId}</p>
+      <div className="avalon-card p-4">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">房间码</p>
+        <p className="text-xl font-mono font-bold text-slate-100" data-testid="room-code">
+          {roomId}
+        </p>
       </div>
-      <div className="p-3 bg-white rounded-xl border border-gray-200 inline-block self-start">
+      <div className="p-3 avalon-card inline-block self-start">
         <img
           src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?room=${roomId}` : '')}`}
           alt="Scan to join room"
@@ -172,29 +175,29 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
           height={120}
           className="block rounded-lg"
         />
-        <p className="text-xs text-gray-500 mt-2">扫码加入</p>
+        <p className="text-xs text-slate-500 mt-2">扫码加入</p>
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">本局人数与角色</h2>
-        <p className="text-sm text-gray-600 mb-3">
+      <div className="avalon-card p-4">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">本局人数与角色</h2>
+        <p className="text-sm text-slate-300 mb-3">
           当前进房 {playerIds.length} 人
           {hasFixedExpected ? (
             <>
               {' '}
-              / 本局设定 <span className="font-semibold">{expectedCount}</span> 人
+              / 本局设定 <span className="font-semibold text-slate-100">{expectedCount}</span> 人
             </>
           ) : (
-            <span className="text-gray-500">（旧房间：人满 5～10 且准备即可开局）</span>
+            <span className="text-slate-500">（旧房间：人满 5～10 且准备即可开局）</span>
           )}
           {hasFixedExpected && playerIds.length !== expectedCount && (
-            <span className="text-amber-700 block mt-1">
+            <span className="text-amber-400 block mt-1">
               {playerIds.length < expectedCount ? '还差人，可继续分享房间码' : '人数多于设定，请房主提高人数或有人离开后再开'}
             </span>
           )}
         </p>
         {isHost && (
           <div className="mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">房主：选择本局人数</p>
+            <p className="text-xs font-medium text-slate-500 mb-2">房主：选择本局人数</p>
             <div className="flex flex-wrap gap-2">
               {[5, 6, 7, 8, 9, 10].map((n) => (
                 <button
@@ -205,25 +208,25 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
                   className={`min-h-[44px] min-w-[44px] rounded-xl px-3 font-semibold transition-colors ${
                     n === expectedCount
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-800 active:bg-gray-200'
+                      : 'bg-slate-800 text-slate-200 border border-slate-600 active:bg-slate-700'
                   } disabled:opacity-50`}
                 >
                   {n}
                 </button>
               ))}
             </div>
-            {countError && <p className="text-red-600 text-sm mt-2">{countError}</p>}
+            {countError && <p className="text-red-400 text-sm mt-2">{countError}</p>}
           </div>
         )}
         <LobbyRolePreview goodRoles={roleTemplates.good} evilRoles={roleTemplates.evil} />
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">玩家列表</h2>
+      <div className="avalon-card overflow-hidden">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide px-4 pt-4 pb-2">玩家列表</h2>
         <div className="px-4 pb-4">
           {isHost && (
-            <p className="text-xs text-gray-500 mb-2">房主可将占坑或离线的玩家踢出，被踢者需重新加入房间。</p>
+            <p className="text-xs text-slate-500 mb-2">房主可将占坑或离线的玩家踢出，被踢者需重新加入房间。</p>
           )}
-          {kickError && <p className="text-red-600 text-sm mb-2">{kickError}</p>}
+          {kickError && <p className="text-red-400 text-sm mb-2">{kickError}</p>}
           <PlayerList
             players={room.players ?? {}}
             hostId={room.hostId}
@@ -234,37 +237,37 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
           />
         </div>
       </div>
-      {readyError && <p className="text-red-600 text-sm">{readyError}</p>}
+      {readyError && <p className="text-red-400 text-sm">{readyError}</p>}
       <button
         type="button"
         onClick={handleReady}
         disabled={!room.players?.[playerId]}
-        className={`w-full min-h-[48px] rounded-xl px-4 py-3 font-semibold ${myReady ? 'bg-gray-500' : 'bg-blue-600'} text-white active:opacity-90 transition-opacity disabled:opacity-50`}
+        className={`w-full min-h-[48px] rounded-xl px-4 py-3 font-semibold ${myReady ? 'bg-slate-600' : 'bg-blue-600'} text-white active:opacity-90 transition-opacity disabled:opacity-50`}
       >
         {myReady ? '取消准备' : '准备'}
       </button>
-      {startError && <p className="text-red-600 text-sm">{startError}</p>}
+      {startError && <p className="text-red-400 text-sm">{startError}</p>}
       {isHost && (
         <>
           {!allReady && hasFixedExpected && playerIds.length === expectedCount && notReadyNames.length > 0 && (
-            <p className="text-amber-700 text-sm">等待准备：{notReadyNames.join('、')}</p>
+            <p className="text-amber-400 text-sm">等待准备：{notReadyNames.join('、')}</p>
           )}
           {!allReady && hasFixedExpected && playerIds.length !== expectedCount && (
-            <p className="text-amber-700 text-sm">
+            <p className="text-amber-400 text-sm">
               需 {expectedCount} 人齐且全员准备后才能开始（当前 {playerIds.length} 人）
             </p>
           )}
           {!allReady && !hasFixedExpected && playerIds.length < 5 && (
-            <p className="text-amber-700 text-sm">至少 5 人才能开始（当前 {playerIds.length} 人）</p>
+            <p className="text-amber-400 text-sm">至少 5 人才能开始（当前 {playerIds.length} 人）</p>
           )}
           {!allReady && !hasFixedExpected && playerIds.length >= 5 && notReadyNames.length > 0 && (
-            <p className="text-amber-700 text-sm">等待准备：{notReadyNames.join('、')}</p>
+            <p className="text-amber-400 text-sm">等待准备：{notReadyNames.join('、')}</p>
           )}
           <button
             type="button"
             onClick={handleStartGame}
             disabled={starting || !allReady}
-            className="w-full min-h-[48px] bg-green-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+            className="w-full min-h-[48px] bg-emerald-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
           >
             {starting ? '开始中…' : allReady ? '开始游戏' : '等待人满且全员准备'}
           </button>

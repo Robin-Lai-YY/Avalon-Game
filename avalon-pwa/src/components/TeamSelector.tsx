@@ -51,26 +51,26 @@ export function TeamSelector({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">回合</p>
-        <p className="text-xl font-bold text-gray-800">第 {round} 轮</p>
-        <p className="text-sm text-gray-600 mt-1">队长：{leaderName}</p>
+      <div className="avalon-card p-4 avalon-card-glow-good">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">回合</p>
+        <p className="text-xl font-bold text-slate-100">第 {round} 轮</p>
+        <p className="text-sm text-slate-400 mt-1">队长：{leaderName}</p>
       </div>
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-3">选择任务队伍（选 {teamSize} 人）</p>
-        <ul className="list-none p-0 space-y-0">
+        <p className="text-sm font-semibold text-slate-300 mb-3">选择任务队伍（选 {teamSize} 人）</p>
+        <ul className="list-none p-0 space-y-0 avalon-card overflow-hidden">
           {playerOrder.map((id) => (
-            <li key={id} className="tap-row border-b border-gray-100 last:border-0">
-              <label htmlFor={`team-${id}`} className="flex items-center gap-3 cursor-pointer w-full">
+            <li key={id} className="tap-row border-b border-slate-700/50 last:border-0">
+              <label htmlFor={`team-${id}`} className="flex items-center gap-3 cursor-pointer w-full px-1">
                 <input
                   type="checkbox"
                   id={`team-${id}`}
                   checked={selected.has(id)}
                   onChange={() => toggle(id)}
                   disabled={disabled || (!selected.has(id) && selected.size >= teamSize)}
-                  className="w-6 h-6 rounded border-gray-300 flex-shrink-0"
+                  className="w-6 h-6 rounded border-slate-500 bg-slate-900 flex-shrink-0 accent-blue-500"
                 />
-                <span className="font-medium text-gray-800">{players[id]?.name ?? id}</span>
+                <span className="font-medium text-slate-200">{players[id]?.name ?? id}</span>
               </label>
             </li>
           ))}

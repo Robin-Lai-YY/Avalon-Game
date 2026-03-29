@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { HomePage } from './pages/HomePage'
 import { LobbyPage } from './pages/LobbyPage'
 import { RolePage } from './pages/RolePage'
@@ -18,7 +18,6 @@ export default function App() {
   const [view, setView] = useState<View>('home')
   const [roomId, setRoomId] = useState('')
   const [playerId, setPlayerId] = useState('')
-  const [isHost, setIsHost] = useState(false)
   const [restoring, setRestoring] = useState(true)
   const [homeNotice, setHomeNotice] = useState('')
   const [failedInitialRestore, setFailedInitialRestore] = useState(false)
@@ -34,7 +33,6 @@ export default function App() {
         saveSession(rid, pid, host)
         setRoomId(rid)
         setPlayerId(pid)
-        setIsHost(host)
         setFailedInitialRestore(false)
         if (state === 'LOBBY') setView('lobby')
         else if (state === 'ROLE_REVEAL') setView('roleReveal')
@@ -65,7 +63,6 @@ export default function App() {
       saveSession(rid, pid, host)
       setRoomId(rid)
       setPlayerId(pid)
-      setIsHost(host)
       setFailedInitialRestore(false)
       if (state === 'LOBBY') setView('lobby')
       else if (state === 'ROLE_REVEAL') setView('roleReveal')
@@ -83,7 +80,6 @@ export default function App() {
     setFailedInitialRestore(false)
     setRoomId(rid)
     setPlayerId(pid)
-    setIsHost(host)
     setView('lobby')
     saveSession(rid, pid, host)
   }
@@ -92,7 +88,6 @@ export default function App() {
     setFailedInitialRestore(false)
     setRoomId(rid)
     setPlayerId(pid)
-    setIsHost(host)
     saveSession(rid, pid, host)
     if (state === 'LOBBY') setView('lobby')
     else if (state === 'ROLE_REVEAL') setView('roleReveal')
@@ -104,9 +99,12 @@ export default function App() {
     setView('home')
     setRoomId('')
     setPlayerId('')
-    setIsHost(false)
     clearSession()
   }, [])
+
+  function wrap(node: ReactNode) {
+    return <div className="avalon-app">{node}</div>
+  }
 
   async function handleBack() {
     if (view === 'lobby' && roomId && playerId) {
@@ -120,12 +118,11 @@ export default function App() {
     setView('home')
     setRoomId('')
     setPlayerId('')
-    setIsHost(false)
     clearSession()
   }
 
   if (view === 'lobby') {
-    return (
+    return wrap(
       <LobbyPage
         roomId={roomId}
         playerId={playerId}
@@ -137,7 +134,7 @@ export default function App() {
   }
 
   if (view === 'roleReveal') {
-    return (
+    return wrap(
       <RolePage
         roomId={roomId}
         playerId={playerId}
@@ -147,7 +144,7 @@ export default function App() {
   }
 
   if (view === 'game') {
-    return (
+    return wrap(
       <GamePage
         roomId={roomId}
         playerId={playerId}
@@ -157,14 +154,14 @@ export default function App() {
   }
 
   if (restoring) {
-    return (
+    return wrap(
       <div className="min-h-screen flex items-center justify-center p-4">
-        <p>Loading…</p>
+        <p className="text-slate-400">Loading…</p>
       </div>
     )
   }
 
-  return (
+  return wrap(
     <HomePage
       notice={homeNotice}
       onClearNotice={() => setHomeNotice('')}

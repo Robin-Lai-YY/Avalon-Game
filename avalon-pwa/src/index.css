@@ -1,11 +1,44 @@
 @import "tailwindcss";
 
+/* Avalon visual system — see /avalon_visual_prompts.md */
+:root {
+  /* Matches app-cover.png outer margins (deep blue-black) */
+  --avalon-bg: #060814;
+  --avalon-bg-elevated: #0e121c;
+  --avalon-border: rgba(148, 163, 184, 0.12);
+  --avalon-good: #3b82f6;
+  --avalon-evil: #ef4444;
+  --avalon-text: #e2e8f0;
+  --avalon-text-muted: #94a3b8;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   -webkit-tap-highlight-color: transparent;
+  background: var(--avalon-bg);
+  color: var(--avalon-text);
+}
+
+.avalon-app {
+  min-height: 100vh;
+  background: var(--avalon-bg);
+}
+
+.avalon-card {
+  background: var(--avalon-bg-elevated);
+  border: 1px solid var(--avalon-border);
+  border-radius: 0.75rem;
+}
+
+.avalon-card-glow-good {
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35), 0 0 24px -8px rgba(59, 130, 246, 0.45);
+}
+
+.avalon-card-glow-evil {
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35), 0 0 24px -8px rgba(239, 68, 68, 0.4);
 }
 
 /* Touch-friendly: minimum 44px tap targets */
@@ -138,4 +171,11 @@ button.inline-tap {
 
 .section-spacing-lg {
   margin-bottom: 2rem;
+}
+
+/* Home cover: sharper scaling + richer contrast on retina */
+.hero-cover-img {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  filter: brightness(1.04) contrast(1.06) saturate(1.08);
 }

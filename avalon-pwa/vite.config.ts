@@ -15,8 +15,8 @@ export default defineConfig({
         name: 'Avalon Assistant',
         short_name: 'Avalon',
         description: 'Realtime assistant for The Resistance: Avalon',
-        theme_color: '#1a1a1a',
-        background_color: '#242424',
+        theme_color: '#060814',
+        background_color: '#060814',
         display: 'standalone',
       },
       workbox: {

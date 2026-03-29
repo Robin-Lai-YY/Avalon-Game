@@ -271,9 +271,9 @@ export async function startGame(roomId: string): Promise<void> {
     }
   }
   const count = playerIds.length
-  const expectedRaw = room.expectedPlayerCount
+  const expectedRaw: unknown = room.expectedPlayerCount
   const expected =
-    expectedRaw != null && expectedRaw !== '' ? Number(expectedRaw) : count
+    expectedRaw != null && String(expectedRaw).trim() !== '' ? Number(expectedRaw) : count
   if (expected < 5 || expected > 10) {
     throw new Error('本局人数设定无效，请房主重新选择 5～10 人')
   }

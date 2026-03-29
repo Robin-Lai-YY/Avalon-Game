@@ -36,31 +36,31 @@ export function AssassinPanel({
 
   if (!isAssassin) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">刺杀阶段</h2>
-        <p className="text-gray-600">等待刺客（{assassinName}）选择梅林。</p>
+      <div className="avalon-card p-5 text-center">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">刺杀阶段</h2>
+        <p className="text-slate-400">等待刺客（{assassinName}）选择梅林。</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-xl border border-gray-200 bg-red-50 p-4">
-        <h2 className="text-sm font-semibold text-gray-600">刺客：{assassinName}</h2>
-        <p className="text-gray-700 mt-1">选择你认为的梅林</p>
+      <div className="rounded-xl p-4 bg-slate-900/80 avalon-card-glow-evil border border-red-500/30">
+        <h2 className="text-sm font-semibold text-red-300">刺客：{assassinName}</h2>
+        <p className="text-slate-300 mt-1">选择你认为的梅林</p>
       </div>
-      <ul className="list-none p-0 space-y-0 rounded-xl border border-gray-200 overflow-hidden">
+      <ul className="list-none p-0 space-y-0 rounded-xl avalon-card overflow-hidden">
         {targetIds.map((id) => (
-          <li key={id} className="tap-row border-b border-gray-100 last:border-0 bg-white">
+          <li key={id} className="tap-row border-b border-slate-700/50 last:border-0 bg-slate-900/40">
             <label className="flex items-center gap-3 cursor-pointer w-full px-4">
               <input
                 type="radio"
                 name="assassin-target"
                 checked={selected === id}
                 onChange={() => setSelected(id)}
-                className="w-6 h-6 flex-shrink-0"
+                className="w-6 h-6 flex-shrink-0 accent-red-500"
               />
-              <span className="font-medium text-gray-800">{players[id]?.name ?? id}</span>
+              <span className="font-medium text-slate-200">{players[id]?.name ?? id}</span>
             </label>
           </li>
         ))}

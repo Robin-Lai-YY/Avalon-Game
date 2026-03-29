@@ -36,10 +36,10 @@ test.describe('5人局完整流程', () => {
     }
     await expect(pages[0].getByText('Round: 1')).toBeVisible({ timeout: 25000 })
     await new Promise((r) => setTimeout(r, 2000))
-    let leaderPage = await findLeaderPage(pages, 2)
+    let leaderPage = await findLeaderPage(pages)
     if (!leaderPage) {
       await new Promise((r) => setTimeout(r, 3000))
-      leaderPage = await findLeaderPage(pages, 2)
+      leaderPage = await findLeaderPage(pages)
     }
     expect(leaderPage).not.toBeNull()
     const checkboxes = leaderPage!.getByRole('checkbox')
@@ -114,10 +114,10 @@ test.describe('5人局完整流程', () => {
       const teamSize = TEAM_SIZES_BY_ROUND[round] ?? 2
 
       // 6a) TEAM_SELECTION：找到队长页（有可点 checkbox），勾选 teamSize 个并确认
-      let leaderPage = await findLeaderPage(pages, teamSize)
+      let leaderPage = await findLeaderPage(pages)
       if (leaderPage === null) {
         await new Promise((r) => setTimeout(r, 3000))
-        leaderPage = await findLeaderPage(pages, teamSize)
+        leaderPage = await findLeaderPage(pages)
       }
       if (leaderPage === null) break
       const checkboxes = leaderPage.getByRole('checkbox')
@@ -215,7 +215,7 @@ async function waitForNextPhase(
 }
 
 /** 队长页 = 有 data-testid=team-selector-leader 的页面，否则退化为「有可点 checkbox」的页 */
-async function findLeaderPage(pages: Page[], _teamSize: number): Promise<Page | null> {
+async function findLeaderPage(pages: Page[]): Promise<Page | null> {
   for (const page of pages) {
     try {
       await page.getByTestId('team-selector-leader').waitFor({ state: 'visible', timeout: 5000 })

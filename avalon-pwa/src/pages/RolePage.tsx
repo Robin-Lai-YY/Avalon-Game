@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
-import { advanceToTeamSelection, getVisiblePlayerIds } from '../services/gameEngine'
+import { FantasySilhouette, roleToSilhouetteVariant } from '../components/visuals/FantasySilhouette'
+import { advanceToTeamSelection, getVisiblePlayerIds, isEvilRole } from '../services/gameEngine'
 
 type RoomData = {
   state: string
@@ -44,26 +45,39 @@ export function RolePage({ roomId, playerId, onContinue }: RolePageProps) {
   if (!room) {
     return (
       <div className="min-h-screen flex items-center justify-center p-5">
-        <p className="text-gray-500">加载中…</p>
+        <p className="text-slate-400">加载中…</p>
       </div>
     )
   }
 
+  const sil = roleToSilhouetteVariant(myRole)
+
   return (
     <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-6 animate-fade-in">
-      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">你的身份</h2>
-      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 py-8 px-6 text-center">
-        <p className="text-2xl font-mono font-bold text-amber-900">{myRole || '—'}</p>
+      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">你的身份</h2>
+      <div
+        className={`rounded-2xl py-6 px-6 text-center bg-slate-900/70 ${
+          isEvilRole(myRole)
+            ? 'avalon-card-glow-evil border border-red-500/30'
+            : 'avalon-card-glow-good border border-blue-500/30'
+        }`}
+      >
+        <div className="flex justify-center mb-3">
+          <FantasySilhouette variant={sil} size={100} />
+        </div>
+        <p className="text-xl font-mono font-bold text-slate-100">{myRole || '—'}</p>
       </div>
       <div>
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">可见玩家</h3>
-        <ul className="list-none p-0 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">可见玩家</h3>
+        <ul className="list-none p-0 space-y-2 rounded-xl avalon-card p-4">
           {visibleEntries.length > 0 ? (
             visibleEntries.map(({ id, name }) => (
-              <li key={id} className="text-gray-800 font-medium">{name}</li>
+              <li key={id} className="text-slate-200 font-medium">
+                {name}
+              </li>
             ))
           ) : (
-            <li className="text-gray-500">无</li>
+            <li className="text-slate-500">无</li>
           )}
         </ul>
       </div>
