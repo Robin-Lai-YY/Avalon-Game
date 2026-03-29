@@ -20,6 +20,21 @@ type FantasySilhouetteProps = {
 }
 
 export function FantasySilhouette({ variant, className = '', size = 120 }: FantasySilhouetteProps) {
+  if (variant === 'good' || variant === 'evil') {
+    const base = import.meta.env.BASE_URL
+    const src = variant === 'good' ? `${base}faction-good.png` : `${base}faction-evil.png`
+    return (
+      <img
+        src={src}
+        alt={variant === 'good' ? '正义阵营' : '邪恶阵营'}
+        width={size}
+        height={size}
+        className={`object-cover ${className}`}
+        draggable={false}
+      />
+    )
+  }
+
   const uid = useId().replace(/:/g, '')
   const evil = isEvilVariant(variant)
   const primary = evil ? EVIL_PRIMARY : GOOD_PRIMARY
@@ -194,32 +209,8 @@ export function FantasySilhouette({ variant, className = '', size = 120 }: Fanta
           </g>
         )
 
-      case 'good':
-        return (
-          <g>
-            {/* Shield silhouette for generic good */}
-            <path d="M50 16 L68 28 L68 60 Q68 84 50 96 Q32 84 32 60 L32 28 Z" fill={`url(#${gradId})`} opacity="0.8" />
-            {/* Inner shield */}
-            <path d="M50 24 L62 32 L62 58 Q62 76 50 86 Q38 76 38 58 L38 32 Z" fill={primary} opacity="0.2" />
-            {/* Star emblem */}
-            <circle cx="50" cy="52" r="6" fill={GOOD_SECONDARY} opacity="0.25" />
-            <circle cx="50" cy="52" r="3" fill={GOOD_SECONDARY} opacity="0.4" />
-          </g>
-        )
-
-      case 'evil':
       default:
-        return (
-          <g>
-            {/* Skull-like shape for generic evil */}
-            <path d="M50 16 Q32 22 28 42 L30 68 Q32 88 50 96 Q68 88 70 68 L72 42 Q68 22 50 16" fill={`url(#${gradId})`} opacity="0.8" />
-            {/* Dark face */}
-            <ellipse cx="50" cy="44" rx="12" ry="14" fill="#1a0505" opacity="0.35" />
-            {/* Eyes */}
-            <ellipse cx="44" cy="42" rx="2.5" ry="2" fill={EVIL_PRIMARY} opacity="0.5" />
-            <ellipse cx="56" cy="42" rx="2.5" ry="2" fill={EVIL_PRIMARY} opacity="0.5" />
-          </g>
-        )
+        return null
     }
   }
 
