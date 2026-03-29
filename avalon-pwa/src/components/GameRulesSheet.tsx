@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const MISSION_SIZES: Record<number, number[]> = {
   5: [2, 3, 2, 3, 3],
@@ -27,19 +28,25 @@ export function GameRulesSheet({ open, onClose }: GameRulesSheetProps) {
     { id: 'missions', label: '任务表' },
   ]
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
 
-      {/* Sheet */}
+      {/* Sheet — fixed to bottom, nearly full height with safe-area */}
       <div
-        className="relative w-full max-w-lg max-h-[85dvh] sm:max-h-[80dvh] bg-[#0c101e] border border-white/[0.08] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col animate-slide-up"
+        className="relative w-full sm:max-w-lg bg-[#0c101e] border-t border-x border-white/[0.08] rounded-t-2xl flex flex-col animate-slide-up"
+        style={{ height: 'calc(92dvh - env(safe-area-inset-top, 0px))' }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+          <div className="w-9 h-1 rounded-full bg-white/[0.15]" />
+        </div>
+
         {/* Header */}
-        <div className="shrink-0 px-5 pt-5 pb-3 border-b border-white/[0.06]">
-          <div className="flex items-center justify-between mb-4">
+        <div className="shrink-0 px-5 pt-2 pb-3 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-bold text-white">游戏规则</h2>
             <button
               type="button"
@@ -70,14 +77,21 @@ export function GameRulesSheet({ open, onClose }: GameRulesSheetProps) {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        {/* Scrollable content */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-5"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
           {tab === 'overview' && <OverviewTab />}
           {tab === 'roles' && <RolesTab />}
           {tab === 'missions' && <MissionsTab />}
+
+          {/* Bottom safe area spacer */}
+          <div className="h-[env(safe-area-inset-bottom,0px)]" />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
