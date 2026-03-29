@@ -12,9 +12,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Avalon Assistant',
-        short_name: 'Avalon',
-        description: 'Realtime assistant for The Resistance: Avalon',
+        name: '谁是真的派西维尔?',
+        short_name: '派西维尔',
+        description: '阿瓦隆组队与任务助手',
         theme_color: '#060814',
         background_color: '#060814',
         display: 'standalone',

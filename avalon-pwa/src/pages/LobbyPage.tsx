@@ -11,6 +11,7 @@ import {
 import { LobbyRolePreview } from '../components/LobbyRolePreview'
 import { PlayerList } from '../components/PlayerList'
 import type { Player } from '../components/PlayerList'
+import { GameRulesSheet } from '../components/GameRulesSheet'
 
 type RoomData = {
   hostId: string
@@ -36,6 +37,7 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
   const [kickError, setKickError] = useState('')
   const [kickingId, setKickingId] = useState<string | null>(null)
   const [readyError, setReadyError] = useState('')
+  const [rulesOpen, setRulesOpen] = useState(false)
   const wasInLobbyWithSelf = useRef(false)
 
   useEffect(() => {
@@ -169,6 +171,18 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
           </svg>
           返回
         </button>
+        <button
+          type="button"
+          onClick={() => setRulesOpen(true)}
+          className="min-h-[44px] flex items-center gap-1.5 text-slate-400 font-medium text-sm transition-colors active:text-white"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="opacity-60">
+            <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M6.5 6.5a1.5 1.5 0 112.12 1.37c-.39.18-.62.56-.62.98V10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="8" cy="12" r="0.75" fill="currentColor"/>
+          </svg>
+          规则
+        </button>
       </div>
 
       <div className="flex flex-col gap-5 stagger-children">
@@ -300,6 +314,8 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
           </>
         )}
       </div>
+
+      <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
     </div>
   )
 }
