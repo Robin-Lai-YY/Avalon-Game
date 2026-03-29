@@ -40,6 +40,7 @@ type RoomData = {
     result: 'approved' | 'rejected'
   }>
   roundResultAck?: Record<string, boolean>
+  consecutiveRejects?: number
 }
 
 type GamePageProps = {
@@ -81,6 +82,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   const teamSize = getMissionTeamSize(round, playerOrder.length)
   const isLeader = playerOrder[leaderIndex] === playerId
   const score = room.score ?? { good: 0, evil: 0 }
+  const consecutiveRejects = Number(room.consecutiveRejects) || 0
 
   const scoreBar = (
     <div className="avalon-card p-4 flex items-center justify-between">
@@ -250,6 +252,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
           players={players}
           myVote={myVote}
           onVote={handleVote}
+          consecutiveRejects={consecutiveRejects}
         />
       </div>
     )
@@ -296,6 +299,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
         teamSize={teamSize}
         onConfirm={handleConfirmTeam}
         disabled={!isLeader || saving}
+        consecutiveRejects={consecutiveRejects}
       />
     </div>
   )

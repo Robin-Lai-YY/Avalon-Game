@@ -10,6 +10,7 @@ type ResultPageProps = {
 
 type RoomResult = {
   result?: 'good' | 'evil'
+  resultReason?: string
   history?: Array<{ round: number; success: boolean; successCount?: number; failCount?: number }>
   teamVoteHistory?: Array<{
     round: number
@@ -71,7 +72,9 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
             {isGoodWin ? '正义获胜' : '邪恶获胜'}
           </h1>
           <p className={`mt-1.5 text-sm ${isGoodWin ? 'text-blue-400/50' : 'text-red-400/50'}`}>
-            {isGoodWin ? 'Good Wins' : 'Evil Wins'}
+            {room.resultReason === 'five_rejects'
+              ? '连续 5 次否决组队，坏人自动获胜'
+              : isGoodWin ? 'Good Wins' : 'Evil Wins'}
           </p>
         </div>
       </div>

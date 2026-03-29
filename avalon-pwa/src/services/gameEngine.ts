@@ -24,6 +24,11 @@ function generatePlayerId(): string {
   return crypto.randomUUID()
 }
 
+/** Compare lobby display names for duplicate check (trim + case-insensitive). */
+function normalizeNameForDuplicateCheck(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 const GOOD_ROLE_TEMPLATES: Record<number, string[]> = {
   5: ['MERLIN', 'PERCIVAL', 'SERVANT'],
   6: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT'],
@@ -94,6 +99,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
     score: { good: 0, evil: 0 },
     result: null,
     expectedPlayerCount: 5,
+    consecutiveRejects: 0,
   })
 
   return { roomId, hostId }
@@ -117,10 +123,20 @@ export async function joinRoom(
   if (room.state !== 'LOBBY') {
     throw new Error('Game has already started')
   }
+  const incoming = normalizeNameForDuplicateCheck(name)
+  if (incoming === '') {
+    throw new Error('Enter your name')
+  }
+  const players = room.players ?? {}
+  for (const p of Object.values(players) as Array<{ name?: string }>) {
+    if (normalizeNameForDuplicateCheck(p?.name ?? '') === incoming) {
+      throw new Error('该昵称已被使用，请换一个名字')
+    }
+  }
   const playerId = generatePlayerId()
   const playerRef = ref(db, `rooms/${roomId}/players/${playerId}`)
   await set(playerRef, {
-    name,
+    name: name.trim(),
     ready: false,
     role: '',
   })
@@ -354,7 +370,7 @@ export async function advanceToTeamSelection(roomId: string): Promise<void> {
   if (!snapshot.exists()) throw new Error('Room not found')
   const room = snapshot.val()
   if (room.state !== 'ROLE_REVEAL') return
-  await update(roomRef, { state: 'TEAM_SELECTION', round: 1 })
+  await update(roomRef, { state: 'TEAM_SELECTION', round: 1, consecutiveRejects: 0 })
 }
 
 /**
@@ -476,16 +492,31 @@ export async function resolveTeamVote(roomId: string): Promise<void> {
     result: approve > reject ? 'approved' : 'rejected',
   })
   if (approve > reject) {
-    await update(roomRef, { state: 'MISSION_VOTING', teamVoteHistory, votes: {} })
+    await update(roomRef, { state: 'MISSION_VOTING', teamVoteHistory, votes: {}, consecutiveRejects: 0 })
   } else {
-    const nextIndex = (leaderIndex + 1) % playerIds.length
-    await update(roomRef, {
-      state: 'TEAM_SELECTION',
-      leaderIndex: nextIndex,
-      team: {},
-      votes: {},
-      teamVoteHistory,
-    })
+    const prevRejects = Number(room.consecutiveRejects) || 0
+    const newRejects = prevRejects + 1
+
+    if (newRejects >= 5) {
+      await update(roomRef, {
+        state: 'GAME_END',
+        result: 'evil',
+        resultReason: 'five_rejects',
+        teamVoteHistory,
+        votes: {},
+        consecutiveRejects: newRejects,
+      })
+    } else {
+      const nextIndex = (leaderIndex + 1) % playerIds.length
+      await update(roomRef, {
+        state: 'TEAM_SELECTION',
+        leaderIndex: nextIndex,
+        team: {},
+        votes: {},
+        teamVoteHistory,
+        consecutiveRejects: newRejects,
+      })
+    }
   }
 }
 
@@ -590,6 +621,7 @@ export async function advanceFromRoundResult(roomId: string): Promise<void> {
     team: {},
     votes: {},
     roundResultAck: {},
+    consecutiveRejects: 0,
   })
 }
 

@@ -5,6 +5,7 @@ export type VotePanelProps = {
   players: Record<string, { name: string }>
   myVote: 'approve' | 'reject' | null
   onVote: (vote: 'approve' | 'reject') => Promise<void>
+  consecutiveRejects?: number
 }
 
 export function VotePanel({
@@ -12,6 +13,7 @@ export function VotePanel({
   players,
   myVote,
   onVote,
+  consecutiveRejects = 0,
 }: VotePanelProps) {
   const [submitting, setSubmitting] = useState(false)
   async function handleVote(vote: 'approve' | 'reject') {
@@ -42,6 +44,33 @@ export function VotePanel({
           ))}
         </div>
       </div>
+
+      {/* Rejection warning */}
+      {consecutiveRejects > 0 && (
+        <div className={`avalon-card p-3 flex items-center gap-2.5 ${
+          consecutiveRejects >= 4 ? 'avalon-card-glow-evil' : ''
+        }`}>
+          <div className="flex gap-1 shrink-0">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div
+                key={i}
+                className={`w-4 h-4 rounded-sm flex items-center justify-center text-[0.5625rem] font-bold transition-all duration-300 ${
+                  i < consecutiveRejects
+                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    : 'bg-white/[0.03] text-slate-600 border border-white/[0.06]'
+                }`}
+              >
+                {i + 1}
+              </div>
+            ))}
+          </div>
+          <p className={`text-[0.75rem] ${consecutiveRejects >= 4 ? 'text-red-400 font-medium' : 'text-slate-400'}`}>
+            {consecutiveRejects >= 4
+              ? '再次否决则坏人直接获胜！'
+              : `已连续否决 ${consecutiveRejects} 次（5 次则坏人获胜）`}
+          </p>
+        </div>
+      )}
 
       {/* Vote Buttons */}
       <div>
