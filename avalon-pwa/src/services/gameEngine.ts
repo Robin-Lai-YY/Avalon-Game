@@ -24,6 +24,12 @@ function generatePlayerId(): string {
   return crypto.randomUUID()
 }
 
+function generateReconnectToken(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 /** Compare lobby display names for duplicate check (trim + case-insensitive). */
 function normalizeNameForDuplicateCheck(name: string): string {
   return name.trim().toLowerCase()
@@ -73,9 +79,10 @@ export function generateRoles(playerCount: number): string[] {
  * Caller is the host and is added as the first player.
  * @returns { roomId, hostId }
  */
-export async function createRoom(hostName: string): Promise<{ roomId: string; hostId: string }> {
+export async function createRoom(hostName: string): Promise<{ roomId: string; hostId: string; reconnectToken: string }> {
   const roomId = generateRoomId()
   const hostId = generateHostId()
+  const reconnectToken = generateReconnectToken()
 
   const roomRef = ref(db, `rooms/${roomId}`)
   await set(roomRef, {
@@ -88,6 +95,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
         name: hostName,
         ready: false,
         role: '',
+        reconnectToken,
       },
     },
     roles: {},
@@ -102,7 +110,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
     consecutiveRejects: 0,
   })
 
-  return { roomId, hostId }
+  return { roomId, hostId, reconnectToken }
 }
 
 /**
@@ -113,7 +121,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
 export async function joinRoom(
   roomId: string,
   name: string
-): Promise<{ playerId: string }> {
+): Promise<{ playerId: string; reconnectToken: string }> {
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) {
@@ -134,13 +142,15 @@ export async function joinRoom(
     }
   }
   const playerId = generatePlayerId()
+  const reconnectToken = generateReconnectToken()
   const playerRef = ref(db, `rooms/${roomId}/players/${playerId}`)
   await set(playerRef, {
     name: name.trim(),
     ready: false,
     role: '',
+    reconnectToken,
   })
-  return { playerId }
+  return { playerId, reconnectToken }
 }
 
 /**
@@ -219,6 +229,46 @@ export async function reconnectRoom(roomId: string, playerId: string): Promise<{
     playerId,
     isHost: room.hostId === playerId,
     state: room.state ?? 'LOBBY',
+  }
+}
+
+/**
+ * Reconnect using a one-time token (works even without local playerId, e.g. after clearing cache or on another device).
+ * Scans all players in the room for a matching reconnectToken.
+ */
+export async function reconnectByToken(roomId: string, token: string): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+  reconnectToken: string
+}> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) {
+    throw new Error('Room not found')
+  }
+  const room = snapshot.val()
+  const players = room.players ?? {}
+  let matchedId: string | null = null
+  for (const [id, p] of Object.entries(players) as Array<[string, { reconnectToken?: string }]>) {
+    if (p.reconnectToken === token) {
+      matchedId = id
+      break
+    }
+  }
+  if (!matchedId) {
+    throw new Error('Invalid or expired reconnect token')
+  }
+  const newToken = generateReconnectToken()
+  const tokenRef = ref(db, `rooms/${roomId}/players/${matchedId}/reconnectToken`)
+  await set(tokenRef, newToken)
+  return {
+    roomId,
+    playerId: matchedId,
+    isHost: room.hostId === matchedId,
+    state: room.state ?? 'LOBBY',
+    reconnectToken: newToken,
   }
 }
 

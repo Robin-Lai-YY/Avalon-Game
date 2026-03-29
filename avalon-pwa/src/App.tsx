@@ -3,7 +3,7 @@ import { HomePage } from './pages/HomePage'
 import { LobbyPage } from './pages/LobbyPage'
 import { RolePage } from './pages/RolePage'
 import { GamePage } from './pages/GamePage'
-import { leaveLobby, reconnectRoom } from './services/gameEngine'
+import { leaveLobby, reconnectByToken, reconnectRoom } from './services/gameEngine'
 import {
   clearSession,
   isReconnectPermanentFailure,
@@ -14,6 +14,26 @@ import './index.css'
 
 type View = 'home' | 'lobby' | 'roleReveal' | 'game'
 
+function updateUrlRoom(roomId: string, token?: string) {
+  const url = new URL(window.location.href)
+  if (roomId) {
+    url.searchParams.set('room', roomId)
+    if (token) url.searchParams.set('token', token)
+    else url.searchParams.delete('token')
+  } else {
+    url.searchParams.delete('room')
+    url.searchParams.delete('token')
+  }
+  window.history.replaceState(null, '', url.toString())
+}
+
+function clearUrlParams() {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('room')
+  url.searchParams.delete('token')
+  window.history.replaceState(null, '', url.toString())
+}
+
 export default function App() {
   const [view, setView] = useState<View>('home')
   const [roomId, setRoomId] = useState('')
@@ -23,6 +43,33 @@ export default function App() {
   const [failedInitialRestore, setFailedInitialRestore] = useState(false)
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const urlRoom = params.get('room')?.trim().toUpperCase()
+    const urlToken = params.get('token')?.trim()
+
+    if (urlRoom && urlToken) {
+      reconnectByToken(urlRoom, urlToken)
+        .then(({ roomId: rid, playerId: pid, isHost: host, state, reconnectToken: newToken }) => {
+          saveSession(rid, pid, host, newToken)
+          setRoomId(rid)
+          setPlayerId(pid)
+          setFailedInitialRestore(false)
+          updateUrlRoom(rid, newToken)
+          if (state === 'LOBBY') setView('lobby')
+          else if (state === 'ROLE_REVEAL') setView('roleReveal')
+          else setView('game')
+        })
+        .catch((e) => {
+          if (isReconnectPermanentFailure(e)) {
+            clearSession()
+          }
+          setFailedInitialRestore(false)
+          setHomeNotice('重连链接无效或已过期，请使用新的链接或手动加入。')
+        })
+        .finally(() => setRestoring(false))
+      return
+    }
+
     const session = loadSession()
     if (!session) {
       setRestoring(false)
@@ -30,10 +77,11 @@ export default function App() {
     }
     reconnectRoom(session.roomId, session.playerId)
       .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
-        saveSession(rid, pid, host)
+        saveSession(rid, pid, host, session.reconnectToken)
         setRoomId(rid)
         setPlayerId(pid)
         setFailedInitialRestore(false)
+        updateUrlRoom(rid, session.reconnectToken)
         if (state === 'LOBBY') setView('lobby')
         else if (state === 'ROLE_REVEAL') setView('roleReveal')
         else setView('game')
@@ -49,7 +97,7 @@ export default function App() {
       .finally(() => setRestoring(false))
   }, [])
 
-  async function handleRetryInitialRestore() {
+  async function handleRetryRestore() {
     const session = loadSession()
     if (!session) {
       setFailedInitialRestore(false)
@@ -60,10 +108,11 @@ export default function App() {
         session.roomId,
         session.playerId
       )
-      saveSession(rid, pid, host)
+      saveSession(rid, pid, host, session.reconnectToken)
       setRoomId(rid)
       setPlayerId(pid)
       setFailedInitialRestore(false)
+      updateUrlRoom(rid, session.reconnectToken)
       if (state === 'LOBBY') setView('lobby')
       else if (state === 'ROLE_REVEAL') setView('roleReveal')
       else setView('game')
@@ -75,20 +124,22 @@ export default function App() {
     }
   }
 
-  function handleEnterLobby(rid: string, pid: string, host: boolean) {
+  function handleEnterLobby(rid: string, pid: string, host: boolean, reconnectToken?: string) {
     setHomeNotice('')
     setFailedInitialRestore(false)
     setRoomId(rid)
     setPlayerId(pid)
     setView('lobby')
-    saveSession(rid, pid, host)
+    saveSession(rid, pid, host, reconnectToken)
+    updateUrlRoom(rid, reconnectToken)
   }
 
-  function handleReconnect(rid: string, pid: string, host: boolean, state: string) {
+  function handleReconnect(rid: string, pid: string, host: boolean, state: string, reconnectToken?: string) {
     setFailedInitialRestore(false)
     setRoomId(rid)
     setPlayerId(pid)
-    saveSession(rid, pid, host)
+    saveSession(rid, pid, host, reconnectToken)
+    updateUrlRoom(rid, reconnectToken)
     if (state === 'LOBBY') setView('lobby')
     else if (state === 'ROLE_REVEAL') setView('roleReveal')
     else setView('game')
@@ -100,6 +151,7 @@ export default function App() {
     setRoomId('')
     setPlayerId('')
     clearSession()
+    clearUrlParams()
   }, [])
 
   function wrap(node: ReactNode) {
@@ -111,7 +163,7 @@ export default function App() {
       try {
         await leaveLobby(roomId, playerId)
       } catch {
-        // Still return home so user is not stuck; room may already be gone
+        // Still return home so user is not stuck
       }
     }
     setHomeNotice('')
@@ -119,6 +171,7 @@ export default function App() {
     setRoomId('')
     setPlayerId('')
     clearSession()
+    clearUrlParams()
   }
 
   if (view === 'lobby') {
@@ -169,8 +222,8 @@ export default function App() {
     <HomePage
       notice={homeNotice}
       onClearNotice={() => setHomeNotice('')}
-      showRestoreBanner={failedInitialRestore && loadSession() != null}
-      onRetryRestore={handleRetryInitialRestore}
+      showRestoreBanner={failedInitialRestore}
+      onRetryRestore={handleRetryRestore}
       onEnterLobby={handleEnterLobby}
       onReconnect={handleReconnect}
     />

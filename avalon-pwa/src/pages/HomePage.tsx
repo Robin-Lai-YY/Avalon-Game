@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { createRoom, joinRoom, reconnectRoom } from '../services/gameEngine'
-import { loadSession } from '../utils/sessionStorage'
+import { buildReconnectUrl, loadSession } from '../utils/sessionStorage'
 
 type HomePageProps = {
   notice?: string
   onClearNotice?: () => void
   showRestoreBanner?: boolean
   onRetryRestore?: () => void | Promise<void>
-  onEnterLobby: (roomId: string, playerId: string, isHost: boolean) => void
-  onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string) => void
+  onEnterLobby: (roomId: string, playerId: string, isHost: boolean, reconnectToken?: string) => void
+  onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string, reconnectToken?: string) => void
 }
 
 export function HomePage({
@@ -25,6 +25,9 @@ export function HomePage({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [restoreLoading, setRestoreLoading] = useState(false)
+  const [quickReconnecting, setQuickReconnecting] = useState(false)
+
+  const savedSession = loadSession()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -40,8 +43,8 @@ export function HomePage({
     }
     setLoading(true)
     try {
-      const { roomId, hostId } = await createRoom(name.trim())
-      onEnterLobby(roomId, hostId, true)
+      const { roomId, hostId, reconnectToken } = await createRoom(name.trim())
+      onEnterLobby(roomId, hostId, true, reconnectToken)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create room')
     } finally {
@@ -62,8 +65,8 @@ export function HomePage({
     }
     setLoading(true)
     try {
-      const { playerId } = await joinRoom(code, joinName.trim())
-      onEnterLobby(code, playerId, false)
+      const { playerId, reconnectToken } = await joinRoom(code, joinName.trim())
+      onEnterLobby(code, playerId, false, reconnectToken)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join room'
       if (msg === 'Game has already started' && onReconnect) {
@@ -71,7 +74,7 @@ export function HomePage({
         if (session?.roomId === code && session?.playerId) {
           try {
             const recon = await reconnectRoom(code, session.playerId)
-            onReconnect(recon.roomId, recon.playerId, recon.isHost, recon.state)
+            onReconnect(recon.roomId, recon.playerId, recon.isHost, recon.state, session.reconnectToken)
             return
           } catch {
             setError('游戏已开始。若你刚掉线，请刷新页面自动恢复；否则无法加入已开始的对局。')
@@ -84,6 +87,20 @@ export function HomePage({
       setError(msg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleQuickReconnect() {
+    if (!savedSession) return
+    setQuickReconnecting(true)
+    setError('')
+    try {
+      const recon = await reconnectRoom(savedSession.roomId, savedSession.playerId)
+      onReconnect?.(recon.roomId, recon.playerId, recon.isHost, recon.state, savedSession.reconnectToken)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '重连失败')
+    } finally {
+      setQuickReconnecting(false)
     }
   }
 
@@ -135,7 +152,51 @@ export function HomePage({
         </div>
       )}
 
-      {showRestoreBanner && onRetryRestore && (
+      {/* Quick Reconnect — always visible when session exists */}
+      {savedSession && (
+        <div className="w-full max-w-sm mb-5 avalon-card avalon-card-glow-good p-4 animate-scale-in">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/15 flex items-center justify-center shrink-0 mt-0.5">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-blue-400">
+                <path d="M2 8a6 6 0 0111.46-2.46M14 8a6 6 0 01-11.46 2.46" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <path d="M14 2v4h-4M2 14v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-200">你有进行中的游戏</p>
+              <p className="text-[0.75rem] text-slate-400 mt-0.5 font-mono">房间 {savedSession.roomId}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={quickReconnecting}
+            onClick={handleQuickReconnect}
+            className="w-full mt-3 min-h-[44px] rounded-xl btn-primary px-4 py-2.5 font-semibold disabled:opacity-50 text-sm"
+          >
+            {quickReconnecting ? '连接中…' : '回到房间'}
+          </button>
+          {savedSession.reconnectToken && (
+            <button
+              type="button"
+              onClick={() => {
+                const url = buildReconnectUrl(savedSession.roomId, savedSession.reconnectToken!)
+                navigator.clipboard.writeText(url).then(() => {
+                  setError('')
+                  setError('已复制重连链接，发给掉线的自己或队友即可回来')
+                }).catch(() => {
+                  prompt('复制此链接回到游戏：', url)
+                })
+              }}
+              className="w-full mt-2 min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-400 text-xs font-medium transition-colors active:bg-white/[0.08]"
+            >
+              复制我的重连链接
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Restore banner (network failure) */}
+      {showRestoreBanner && onRetryRestore && !savedSession && (
         <div className="w-full max-w-sm mb-4 rounded-xl avalon-card avalon-card-glow-good p-4 text-sm text-slate-200 animate-scale-in">
           <p className="mb-3 text-slate-300/90 text-[0.8125rem] leading-relaxed">
             检测到你上次未退出的房间，但暂时无法连接。可重试恢复，或检查网络后刷新页面。
@@ -159,7 +220,7 @@ export function HomePage({
       )}
 
       {error && (
-        <div className="w-full max-w-sm mb-4 text-center animate-fail-shake">
+        <div className="w-full max-w-sm mb-4 text-center animate-fail-shake" key={error}>
           <p className="text-red-400/90 text-sm">{error}</p>
         </div>
       )}
