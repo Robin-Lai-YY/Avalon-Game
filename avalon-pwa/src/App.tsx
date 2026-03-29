@@ -155,8 +155,12 @@ export default function App() {
 
   if (restoring) {
     return wrap(
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <p className="text-slate-400">Loading…</p>
+      <div className="min-h-dvh flex items-center justify-center p-4">
+        <div className="flex gap-1.5">
+          <span className="loading-dot" />
+          <span className="loading-dot" />
+          <span className="loading-dot" />
+        </div>
       </div>
     )
   }

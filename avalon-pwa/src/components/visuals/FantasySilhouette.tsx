@@ -1,8 +1,11 @@
-import { useId, type ReactNode } from 'react'
+import { useId } from 'react'
 
-/** Matches avalon_visual_prompts.md: #3B82F6 good, #EF4444 evil */
-const GOOD = '#3B82F6'
-const EVIL = '#EF4444'
+const GOOD_PRIMARY = '#60a5fa'
+const GOOD_SECONDARY = '#93c5fd'
+const EVIL_PRIMARY = '#f87171'
+const EVIL_SECONDARY = '#fca5a5'
+const ACCENT_PURPLE = '#a78bfa'
+const ACCENT_GOLD = '#fbbf24'
 
 type Variant = 'good' | 'evil' | 'merlin' | 'percival' | 'assassin' | 'morgana' | 'servant' | 'minion' | 'mordred' | 'oberon'
 
@@ -13,118 +16,235 @@ function isEvilVariant(v: Variant): boolean {
 type FantasySilhouetteProps = {
   variant: Variant
   className?: string
-  /** Card / icon size */
   size?: number
 }
 
-/**
- * Minimal fantasy silhouette + soft glow (vector, no raster).
- * Style: Modern Minimal Fantasy UI — dark-friendly, mobile-safe.
- */
 export function FantasySilhouette({ variant, className = '', size = 120 }: FantasySilhouetteProps) {
   const uid = useId().replace(/:/g, '')
   const evil = isEvilVariant(variant)
-  const fill = evil ? EVIL : GOOD
-  const filterId = evil ? `glow-red-${uid}` : `glow-blue-${uid}`
+  const primary = evil ? EVIL_PRIMARY : GOOD_PRIMARY
+  const secondary = evil ? EVIL_SECONDARY : GOOD_SECONDARY
+  const gradId = `grad-${uid}`
+  const glowId = `glow-${uid}`
+  const maskId = `mask-${uid}`
 
-  const head = <ellipse cx="50" cy="26" rx="11" ry="13" fill={fill} opacity={0.95} />
+  const gradientDef = (
+    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor={secondary} stopOpacity="0.95" />
+      <stop offset="100%" stopColor={primary} stopOpacity="0.7" />
+    </linearGradient>
+  )
 
-  let body: ReactNode
-  switch (variant) {
-    case 'merlin':
-      body = (
-        <>
-          <path d="M 50 12 L 58 24 L 50 22 L 42 24 Z" fill={fill} opacity={0.9} />
-          {head}
-          <path
-            d="M 32 40 Q 50 36 68 40 L 78 112 L 22 112 Z"
-            fill={fill}
-            opacity={0.85}
-          />
-          <circle cx="50" cy="68" r="4" fill="#93C5FD" opacity={0.6} />
-        </>
-      )
-      break
-    case 'percival':
-    case 'servant':
-      body = (
-        <>
-          {head}
-          <path d="M 38 38 L 62 38 L 68 110 L 32 110 Z" fill={fill} opacity={0.88} />
-          <path d="M 35 42 L 30 55 L 38 52 Z" fill={fill} opacity={0.7} />
-          <path d="M 65 42 L 70 55 L 62 52 Z" fill={fill} opacity={0.7} />
-        </>
-      )
-      break
-    case 'assassin':
-      body = (
-        <>
-          <path d="M 50 18 L 34 38 L 38 42 L 50 32 L 62 42 L 66 38 Z" fill={fill} opacity={0.95} />
-          {head}
-          <path d="M 36 44 L 64 44 L 72 114 L 28 114 Z" fill={fill} opacity={0.82} />
-          <path d="M 18 70 L 36 78 L 34 82 Z" fill={fill} opacity={0.75} />
-        </>
-      )
-      break
-    case 'morgana':
-      body = (
-        <>
-          {head}
-          <path d="M 50 38 L 70 48 L 65 115 L 35 115 L 30 48 Z" fill={fill} opacity={0.85} />
-          <ellipse cx="50" cy="52" rx="18" ry="6" fill="#A855F7" opacity={0.35} />
-        </>
-      )
-      break
-    case 'evil':
-    case 'mordred':
-    case 'minion':
-    case 'oberon':
-      body = (
-        <>
-          <path d="M 50 16 Q 32 28 30 46 L 34 112 L 66 112 L 70 46 Q 68 28 50 16" fill={fill} opacity={0.9} />
-          <ellipse cx="50" cy="38" rx="8" ry="9" fill="#1a0a0a" opacity={0.5} />
-        </>
-      )
-      break
-    default:
-      body = (
-        <>
-          {head}
-          <path d="M 34 38 Q 50 34 66 38 L 76 112 L 24 112 Z" fill={fill} opacity={0.88} />
-        </>
-      )
+  const glowDef = (
+    <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  )
+
+  function renderIcon() {
+    switch (variant) {
+      case 'merlin':
+        return (
+          <g>
+            {/* Wizard hat */}
+            <path d="M50 6 L62 34 L38 34 Z" fill={`url(#${gradId})`} opacity="0.9" />
+            <line x1="50" y1="6" x2="56" y2="12" stroke={ACCENT_GOLD} strokeWidth="1.5" opacity="0.7" />
+            <circle cx="56" cy="12" r="2" fill={ACCENT_GOLD} opacity="0.8" />
+            {/* Head */}
+            <circle cx="50" cy="42" r="10" fill={`url(#${gradId})`} />
+            {/* Robe */}
+            <path d="M34 50 Q50 46 66 50 L72 98 Q50 102 28 98 Z" fill={`url(#${gradId})`} opacity="0.8" />
+            {/* Staff */}
+            <line x1="72" y1="40" x2="76" y2="96" stroke={GOOD_SECONDARY} strokeWidth="2" opacity="0.5" strokeLinecap="round" />
+            <circle cx="72" cy="38" r="4" fill={ACCENT_GOLD} opacity="0.6" />
+            <circle cx="72" cy="38" r="2" fill="white" opacity="0.3" />
+            {/* Orb glow */}
+            <circle cx="50" cy="70" r="5" fill={GOOD_SECONDARY} opacity="0.15" />
+            <circle cx="50" cy="70" r="2.5" fill={GOOD_SECONDARY} opacity="0.3" />
+          </g>
+        )
+
+      case 'percival':
+        return (
+          <g>
+            {/* Helmet */}
+            <path d="M38 28 Q50 16 62 28 L62 38 Q50 42 38 38 Z" fill={`url(#${gradId})`} opacity="0.9" />
+            <line x1="50" y1="18" x2="50" y2="28" stroke={GOOD_SECONDARY} strokeWidth="2" opacity="0.5" strokeLinecap="round" />
+            {/* Visor */}
+            <path d="M42 32 Q50 30 58 32" stroke={primary} strokeWidth="1.5" fill="none" opacity="0.6" />
+            {/* Head */}
+            <circle cx="50" cy="36" r="9" fill={`url(#${gradId})`} />
+            {/* Armor body */}
+            <path d="M36 44 L64 44 L68 96 L32 96 Z" fill={`url(#${gradId})`} opacity="0.85" />
+            {/* Shoulder guards */}
+            <ellipse cx="34" cy="48" rx="6" ry="4" fill={primary} opacity="0.6" />
+            <ellipse cx="66" cy="48" rx="6" ry="4" fill={primary} opacity="0.6" />
+            {/* Shield */}
+            <path d="M24 56 L32 52 L32 72 L28 76 Z" fill={GOOD_SECONDARY} opacity="0.4" />
+            <line x1="28" y1="58" x2="28" y2="70" stroke={GOOD_PRIMARY} strokeWidth="1" opacity="0.3" />
+            {/* Belt */}
+            <rect x="36" y="68" width="28" height="3" rx="1.5" fill={primary} opacity="0.4" />
+          </g>
+        )
+
+      case 'servant':
+        return (
+          <g>
+            {/* Hood */}
+            <path d="M36 30 Q50 18 64 30 L66 42 Q50 46 34 42 Z" fill={`url(#${gradId})`} opacity="0.85" />
+            {/* Head */}
+            <circle cx="50" cy="38" r="9" fill={`url(#${gradId})`} />
+            {/* Cloak */}
+            <path d="M34 44 Q50 40 66 44 L70 98 Q50 100 30 98 Z" fill={`url(#${gradId})`} opacity="0.75" />
+            {/* Inner vest */}
+            <path d="M42 50 L58 50 L56 88 L44 88 Z" fill={primary} opacity="0.25" />
+            {/* Subtle loyal heart emblem */}
+            <circle cx="50" cy="62" r="3" fill={GOOD_SECONDARY} opacity="0.2" />
+          </g>
+        )
+
+      case 'assassin':
+        return (
+          <g>
+            {/* Hood - sharp & angular */}
+            <path d="M50 14 L38 32 L40 36 L50 30 L60 36 L62 32 Z" fill={`url(#${gradId})`} opacity="0.95" />
+            {/* Head */}
+            <circle cx="50" cy="36" r="9" fill={`url(#${gradId})`} />
+            {/* Mask/shadow over face */}
+            <path d="M43 34 Q50 32 57 34 L56 38 Q50 40 44 38 Z" fill="#1a0505" opacity="0.4" />
+            {/* Body - asymmetric cloak */}
+            <path d="M34 42 L66 42 L74 98 L26 98 Z" fill={`url(#${gradId})`} opacity="0.82" />
+            {/* Dagger */}
+            <line x1="70" y1="54" x2="78" y2="44" stroke={EVIL_SECONDARY} strokeWidth="1.5" opacity="0.7" strokeLinecap="round" />
+            <path d="M78 44 L80 42 L79 46 Z" fill={EVIL_SECONDARY} opacity="0.6" />
+            {/* Crossed belt */}
+            <line x1="38" y1="50" x2="62" y2="70" stroke={EVIL_PRIMARY} strokeWidth="1" opacity="0.3" />
+            <line x1="62" y1="50" x2="38" y2="70" stroke={EVIL_PRIMARY} strokeWidth="1" opacity="0.3" />
+          </g>
+        )
+
+      case 'morgana':
+        return (
+          <g>
+            {/* Crown/tiara */}
+            <path d="M40 26 L44 20 L47 26 L50 18 L53 26 L56 20 L60 26" stroke={ACCENT_PURPLE} strokeWidth="1.5" fill="none" opacity="0.7" />
+            {/* Head */}
+            <circle cx="50" cy="34" r="10" fill={`url(#${gradId})`} />
+            {/* Flowing hair hint */}
+            <path d="M40 30 Q36 40 34 52" stroke={EVIL_SECONDARY} strokeWidth="1.5" fill="none" opacity="0.3" />
+            <path d="M60 30 Q64 40 66 52" stroke={EVIL_SECONDARY} strokeWidth="1.5" fill="none" opacity="0.3" />
+            {/* Dress/robe */}
+            <path d="M36 44 Q50 40 64 44 L72 100 Q50 104 28 100 Z" fill={`url(#${gradId})`} opacity="0.8" />
+            {/* Magic aura */}
+            <ellipse cx="50" cy="60" rx="14" ry="6" fill={ACCENT_PURPLE} opacity="0.12" />
+            {/* Orbs */}
+            <circle cx="36" cy="62" r="2.5" fill={ACCENT_PURPLE} opacity="0.35" />
+            <circle cx="64" cy="62" r="2.5" fill={ACCENT_PURPLE} opacity="0.35" />
+          </g>
+        )
+
+      case 'mordred':
+        return (
+          <g>
+            {/* Dark crown */}
+            <path d="M38 24 L42 16 L46 24 L50 12 L54 24 L58 16 L62 24" fill={`url(#${gradId})`} opacity="0.9" />
+            {/* Head */}
+            <circle cx="50" cy="34" r="10" fill={`url(#${gradId})`} />
+            {/* Dark visor */}
+            <ellipse cx="50" cy="34" rx="7" ry="5" fill="#1a0505" opacity="0.5" />
+            {/* Heavy armor/robe */}
+            <path d="M32 44 L68 44 L74 100 L26 100 Z" fill={`url(#${gradId})`} opacity="0.85" />
+            {/* Shoulder spikes */}
+            <path d="M32 44 L24 36 L34 48 Z" fill={primary} opacity="0.6" />
+            <path d="M68 44 L76 36 L66 48 Z" fill={primary} opacity="0.6" />
+            {/* Dark emblem */}
+            <circle cx="50" cy="64" r="5" fill="#1a0505" opacity="0.3" />
+            <circle cx="50" cy="64" r="2.5" fill={EVIL_PRIMARY} opacity="0.3" />
+          </g>
+        )
+
+      case 'oberon':
+        return (
+          <g>
+            {/* Mysterious shroud */}
+            <path d="M50 16 Q34 22 30 40 L28 92 Q50 100 72 92 L70 40 Q66 22 50 16" fill={`url(#${gradId})`} opacity="0.75" />
+            {/* Shadow face */}
+            <ellipse cx="50" cy="36" rx="10" ry="11" fill="#1a0505" opacity="0.45" />
+            {/* Eyes */}
+            <ellipse cx="46" cy="35" rx="1.5" ry="1" fill={EVIL_PRIMARY} opacity="0.7" />
+            <ellipse cx="54" cy="35" rx="1.5" ry="1" fill={EVIL_PRIMARY} opacity="0.7" />
+            {/* Tattered edges */}
+            <path d="M28 92 L26 96 L30 94 L28 100 L34 96 L32 102" stroke={primary} strokeWidth="0.8" fill="none" opacity="0.4" />
+            <path d="M72 92 L74 96 L70 94 L72 100 L66 96 L68 102" stroke={primary} strokeWidth="0.8" fill="none" opacity="0.4" />
+          </g>
+        )
+
+      case 'minion':
+        return (
+          <g>
+            {/* Simple hood */}
+            <path d="M38 30 Q50 20 62 30 L64 40 Q50 44 36 40 Z" fill={`url(#${gradId})`} opacity="0.8" />
+            {/* Head */}
+            <circle cx="50" cy="38" r="9" fill={`url(#${gradId})`} />
+            {/* Plain cloak */}
+            <path d="M36 46 Q50 42 64 46 L68 98 Q50 100 32 98 Z" fill={`url(#${gradId})`} opacity="0.7" />
+            {/* Evil mark */}
+            <circle cx="50" cy="64" r="3" fill="#1a0505" opacity="0.25" />
+          </g>
+        )
+
+      case 'good':
+        return (
+          <g>
+            {/* Shield silhouette for generic good */}
+            <path d="M50 16 L68 28 L68 60 Q68 84 50 96 Q32 84 32 60 L32 28 Z" fill={`url(#${gradId})`} opacity="0.8" />
+            {/* Inner shield */}
+            <path d="M50 24 L62 32 L62 58 Q62 76 50 86 Q38 76 38 58 L38 32 Z" fill={primary} opacity="0.2" />
+            {/* Star emblem */}
+            <circle cx="50" cy="52" r="6" fill={GOOD_SECONDARY} opacity="0.25" />
+            <circle cx="50" cy="52" r="3" fill={GOOD_SECONDARY} opacity="0.4" />
+          </g>
+        )
+
+      case 'evil':
+      default:
+        return (
+          <g>
+            {/* Skull-like shape for generic evil */}
+            <path d="M50 16 Q32 22 28 42 L30 68 Q32 88 50 96 Q68 88 70 68 L72 42 Q68 22 50 16" fill={`url(#${gradId})`} opacity="0.8" />
+            {/* Dark face */}
+            <ellipse cx="50" cy="44" rx="12" ry="14" fill="#1a0505" opacity="0.35" />
+            {/* Eyes */}
+            <ellipse cx="44" cy="42" rx="2.5" ry="2" fill={EVIL_PRIMARY} opacity="0.5" />
+            <ellipse cx="56" cy="42" rx="2.5" ry="2" fill={EVIL_PRIMARY} opacity="0.5" />
+          </g>
+        )
+    }
   }
 
   return (
     <svg
-      viewBox="0 0 100 120"
+      viewBox="0 0 100 110"
       width={size}
-      height={size}
+      height={size * 1.1}
       className={className}
       aria-hidden
     >
       <defs>
-        <filter id={`glow-blue-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.5" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id={`glow-red-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.5" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        {gradientDef}
+        {glowDef}
+        <mask id={maskId}>
+          <rect width="100" height="110" fill="white" />
+        </mask>
       </defs>
-      <g filter={`url(#${filterId})`}>{body}</g>
+      <g filter={`url(#${glowId})`} mask={`url(#${maskId})`}>
+        {renderIcon()}
+      </g>
     </svg>
   )
 }
 
-/** Map game engine role string to silhouette variant */
 export function roleToSilhouetteVariant(role: string): Variant {
   const r = role.toUpperCase()
   const map: Record<string, Variant> = {

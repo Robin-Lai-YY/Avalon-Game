@@ -35,8 +35,12 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
 
   if (!room) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-5">
-        <p className="text-slate-400">加载中…</p>
+      <div className="min-h-dvh flex items-center justify-center p-5">
+        <div className="flex gap-1.5">
+          <span className="loading-dot" />
+          <span className="loading-dot" />
+          <span className="loading-dot" />
+        </div>
       </div>
     )
   }
@@ -48,64 +52,102 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
   const playerOrder = Object.keys(players).sort()
 
   return (
-    <div className="min-h-screen flex flex-col p-5 max-w-md mx-auto gap-6 animate-fade-in">
-      <h1 className="text-xl font-bold text-center text-slate-400 pt-2">游戏结束</h1>
-      <div
-        className={`rounded-2xl p-6 text-center animate-result-reveal bg-slate-900/70 ${
-          isGoodWin ? 'avalon-card-glow-good border border-emerald-500/35' : 'avalon-card-glow-evil border border-red-500/35'
-        }`}
-      >
-        <p className={`text-2xl font-bold ${isGoodWin ? 'text-emerald-400' : 'text-red-400'}`}>
-          {isGoodWin ? '好人赢了' : '坏人赢了'}
-        </p>
-        <p className={`mt-1 text-base ${isGoodWin ? 'text-emerald-300/90' : 'text-red-300/90'}`}>
-          {isGoodWin ? 'Good wins' : 'Evil wins'}
-        </p>
-      </div>
-      <div className="avalon-card p-4">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">最终比分</h2>
-        <div className="flex justify-between text-lg">
-          <span className="text-emerald-400 font-medium">好人 {score.good}</span>
-          <span className="text-red-400 font-medium">坏人 {score.evil}</span>
+    <div className="min-h-dvh flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto animate-page-enter">
+      {/* Victory Header */}
+      <div className="text-center mb-6">
+        <p className="section-label mb-3">游戏结束</p>
+        <div
+          className={`rounded-2xl p-8 animate-result-reveal ${
+            isGoodWin
+              ? 'bg-gradient-to-b from-blue-950/40 to-transparent border border-blue-500/20 avalon-card-glow-good'
+              : 'bg-gradient-to-b from-red-950/40 to-transparent border border-red-500/20 avalon-card-glow-evil'
+          }`}
+          style={{ backdropFilter: 'blur(16px)' }}
+        >
+          <div className={`text-5xl mb-3 ${isGoodWin ? 'animate-win-glow-good' : 'animate-win-glow-evil'}`}>
+            {isGoodWin ? '⚔' : '🗡'}
+          </div>
+          <h1 className={`text-2xl font-bold ${isGoodWin ? 'text-blue-300' : 'text-red-300'}`}>
+            {isGoodWin ? '正义获胜' : '邪恶获胜'}
+          </h1>
+          <p className={`mt-1.5 text-sm ${isGoodWin ? 'text-blue-400/50' : 'text-red-400/50'}`}>
+            {isGoodWin ? 'Good Wins' : 'Evil Wins'}
+          </p>
         </div>
       </div>
-      <VoteHistoryPanel
-        teamVoteHistory={room.teamVoteHistory ?? []}
-        missionHistory={history.map((h) => ({
-          round: h.round,
-          success: h.success,
-          successCount: h.successCount,
-          failCount: h.failCount,
-        }))}
-        players={players}
-        playerOrder={playerOrder}
-      />
-      <div className="avalon-card p-4">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">回合记录</h2>
-        <ul className="list-none p-0 space-y-2">
-          {history.map((h, i) => (
-            <li
-              key={i}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 border-b border-slate-700/50 last:border-0"
-            >
-              <span className="text-slate-200 font-medium">第 {h.round} 轮</span>
-              <span className={h.success ? 'text-emerald-400 font-medium' : 'text-red-400 font-medium'}>
-                {h.success ? '✔ 成功' : '✗ 失败'}
-              </span>
-              {typeof h.successCount === 'number' && typeof h.failCount === 'number' && (
-                <span className="text-slate-500 text-sm">（{h.successCount} 成功 / {h.failCount} 失败）</span>
-              )}
-            </li>
-          ))}
-        </ul>
+
+      <div className="flex flex-col gap-5 stagger-children">
+        {/* Final Score */}
+        <div className="avalon-card p-5">
+          <h2 className="section-label mb-3">最终比分</h2>
+          <div className="flex items-center justify-between">
+            <div className="text-center flex-1">
+              <p className="text-3xl font-bold text-blue-300">{score.good}</p>
+              <p className="text-xs text-slate-500 mt-1">蓝方</p>
+            </div>
+            <div className="w-px h-10 bg-white/[0.06]" />
+            <div className="text-center flex-1">
+              <p className="text-3xl font-bold text-red-300">{score.evil}</p>
+              <p className="text-xs text-slate-500 mt-1">红方</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Vote History */}
+        <VoteHistoryPanel
+          teamVoteHistory={room.teamVoteHistory ?? []}
+          missionHistory={history.map((h) => ({
+            round: h.round,
+            success: h.success,
+            successCount: h.successCount,
+            failCount: h.failCount,
+          }))}
+          players={players}
+          playerOrder={playerOrder}
+        />
+
+        {/* Round History */}
+        <div className="avalon-card p-5">
+          <h2 className="section-label mb-4">回合记录</h2>
+          <div className="space-y-3">
+            {history.map((h, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${
+                  h.success
+                    ? 'bg-emerald-500/[0.06] border border-emerald-500/10'
+                    : 'bg-red-500/[0.06] border border-red-500/10'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
+                  h.success ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
+                }`}>
+                  {h.round}
+                </div>
+                <div className="flex-1">
+                  <span className={`text-sm font-semibold ${h.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {h.success ? '任务成功' : '任务失败'}
+                  </span>
+                  {typeof h.successCount === 'number' && typeof h.failCount === 'number' && (
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {h.successCount} 成功 / {h.failCount} 失败
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Play Again */}
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="w-full min-h-[48px] btn-primary px-4 py-3 font-semibold text-[0.9375rem]"
+        >
+          再玩一局
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onPlayAgain}
-        className="w-full min-h-[48px] bg-blue-600 text-white rounded-xl px-4 py-3 font-semibold active:opacity-90 transition-opacity"
-      >
-        再玩一局
-      </button>
     </div>
   )
 }

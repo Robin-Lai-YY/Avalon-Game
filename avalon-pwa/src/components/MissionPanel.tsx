@@ -1,13 +1,9 @@
 import { useState } from 'react'
 
 export type MissionPanelProps = {
-  /** Whether the current player is on the mission (can vote) */
   isOnMission: boolean
-  /** Current player's mission vote if already cast */
   myVote: 'success' | 'fail' | null
-  /** If false, only Success is allowed (good players). If true, both Success and Fail (evil). */
   canVoteFail: boolean
-  /** Called when mission member submits their vote */
   onVote: (vote: 'success' | 'fail') => Promise<void>
 }
 
@@ -31,25 +27,38 @@ export function MissionPanel({
 
   if (!isOnMission) {
     return (
-      <div className="avalon-card p-5 text-center">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">本轮未出任务</h2>
-        <p className="text-slate-400">等待任务成员投票。</p>
+      <div className="avalon-card p-6 text-center animate-scale-in">
+        <div className="w-10 h-10 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mx-auto mb-3">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-slate-500">
+            <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5"/>
+            <path d="M9 6v4M9 12.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <h2 className="section-label mb-1.5">本轮未出任务</h2>
+        <p className="text-slate-400 text-sm">等待任务成员投票</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <h2 className="text-sm font-semibold text-slate-300">选择任务结果</h2>
+    <div className="flex flex-col gap-5 animate-slide-up">
+      <h2 className="section-label px-1">选择任务结果</h2>
       {myVote != null ? (
-        <p className="text-slate-400 font-medium">你已投：{myVote === 'success' ? '成功' : '失败'}</p>
+        <div className={`avalon-card p-4 text-center ${
+          myVote === 'success' ? 'avalon-card-glow-good' : 'avalon-card-glow-evil'
+        }`}>
+          <p className={`font-semibold text-sm ${myVote === 'success' ? 'text-emerald-300' : 'text-red-300'}`}>
+            已投票：{myVote === 'success' ? '成功' : '失败'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">等待其他任务成员</p>
+        </div>
       ) : (
         <div className="flex gap-3">
           <button
             type="button"
             onClick={() => handleVote('success')}
             disabled={submitting}
-            className="flex-1 min-h-[48px] bg-emerald-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+            className="flex-1 min-h-[52px] btn-success text-white rounded-[0.875rem] px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem] transition-transform active:scale-[0.97]"
           >
             成功
           </button>
@@ -58,12 +67,14 @@ export function MissionPanel({
               type="button"
               onClick={() => handleVote('fail')}
               disabled={submitting}
-              className="flex-1 min-h-[48px] bg-red-600 text-white rounded-xl px-4 py-3 font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
+              className="flex-1 min-h-[52px] btn-evil text-white rounded-[0.875rem] px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem] transition-transform active:scale-[0.97]"
             >
               失败
             </button>
           ) : (
-            <p className="text-slate-500 text-sm self-center py-2">好人只能投成功</p>
+            <div className="flex-1 min-h-[52px] rounded-[0.875rem] bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+              <p className="text-slate-500 text-xs">好人只能投成功</p>
+            </div>
           )}
         </div>
       )}
