@@ -1,4 +1,4 @@
-import { get, ref, set, update } from 'firebase/database'
+import { get, ref, remove, set, update } from 'firebase/database'
 import { db } from './firebase.ts'
 import { getMissionTeamSize, isDoubleFailRound } from '../utils/missionRules.ts'
 import { shuffle } from '../utils/shuffle.ts'
@@ -24,32 +24,42 @@ function generatePlayerId(): string {
   return crypto.randomUUID()
 }
 
+const GOOD_ROLE_TEMPLATES: Record<number, string[]> = {
+  5: ['MERLIN', 'PERCIVAL', 'SERVANT'],
+  6: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT'],
+  7: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT'],
+  8: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT'],
+  9: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT', 'SERVANT'],
+  10: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT', 'SERVANT'],
+}
+
+const EVIL_ROLE_TEMPLATES: Record<number, string[]> = {
+  5: ['ASSASSIN', 'MORGANA'],
+  6: ['ASSASSIN', 'MORGANA'],
+  7: ['ASSASSIN', 'MORGANA', 'OBERON'],
+  8: ['ASSASSIN', 'MORGANA', 'MINION'],
+  9: ['ASSASSIN', 'MORGANA', 'MORDRED'],
+  10: ['ASSASSIN', 'MORGANA', 'MORDRED', 'OBERON'],
+}
+
 /**
- * Returns an array of role names for the given player count (5–10).
- * Matches Avalon_Roles.md: 5→Merlin,Percival,Servant + Assassin,Morgana; 6→+1 Servant; 7→+Oberon; 8→+2 Servant, Minion; 9→+2 Servant, Mordred; 10→+Mordred,Oberon.
+ * Good vs evil role lists for a player count (5–10). Matches Avalon_Roles.md.
  */
-export function generateRoles(playerCount: number): string[] {
+export function getRoleTemplates(playerCount: number): { good: string[]; evil: string[] } {
   if (playerCount < 5 || playerCount > 10) {
     throw new Error('Avalon supports 5 to 10 players')
   }
-  const goodTemplates: Record<number, string[]> = {
-    5: ['MERLIN', 'PERCIVAL', 'SERVANT'],
-    6: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT'],
-    7: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT'],
-    8: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT'],
-    9: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT', 'SERVANT'],
-    10: ['MERLIN', 'PERCIVAL', 'SERVANT', 'SERVANT', 'SERVANT', 'SERVANT'],
-  }
-  const evilTemplates: Record<number, string[]> = {
-    5: ['ASSASSIN', 'MORGANA'],
-    6: ['ASSASSIN', 'MORGANA'],
-    7: ['ASSASSIN', 'MORGANA', 'OBERON'],
-    8: ['ASSASSIN', 'MORGANA', 'MINION'],
-    9: ['ASSASSIN', 'MORGANA', 'MORDRED'],
-    10: ['ASSASSIN', 'MORGANA', 'MORDRED', 'OBERON'],
-  }
-  const good = goodTemplates[playerCount]!
-  const evil = evilTemplates[playerCount]!
+  const good = GOOD_ROLE_TEMPLATES[playerCount]
+  const evil = EVIL_ROLE_TEMPLATES[playerCount]
+  if (!good || !evil) throw new Error('Invalid player count')
+  return { good: [...good], evil: [...evil] }
+}
+
+/**
+ * Returns an array of role names for the given player count (5–10).
+ */
+export function generateRoles(playerCount: number): string[] {
+  const { good, evil } = getRoleTemplates(playerCount)
   return [...good, ...evil]
 }
 
@@ -83,6 +93,7 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
     teamVoteHistory: [],
     score: { good: 0, evil: 0 },
     result: null,
+    expectedPlayerCount: 5,
   })
 
   return { roomId, hostId }
@@ -117,6 +128,57 @@ export async function joinRoom(
 }
 
 /**
+ * Remove self from lobby (e.g. user tapped Back). Prevents ghost players when re-joining with a new id.
+ * If last player, deletes the room. If leaving player was host, assigns hostId to another player.
+ */
+export async function leaveLobby(roomId: string, playerId: string): Promise<void> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) return
+  const room = snapshot.val()
+  if (room.state !== 'LOBBY') return
+  const players = room.players ?? {}
+  if (!players[playerId]) return
+  const playerIds = Object.keys(players).sort()
+  if (playerIds.length === 1) {
+    await remove(roomRef)
+    return
+  }
+  const playerNodeRef = ref(db, `rooms/${roomId}/players/${playerId}`)
+  await remove(playerNodeRef)
+  if (room.hostId === playerId) {
+    const remaining = playerIds.filter((id) => id !== playerId).sort()
+    const newHostId = remaining[0]
+    if (newHostId) {
+      await update(roomRef, { hostId: newHostId })
+    }
+  }
+}
+
+/**
+ * Host removes another player from the lobby (e.g. ghost or AFK). LOBBY only.
+ */
+export async function kickPlayerFromLobby(
+  roomId: string,
+  hostPlayerId: string,
+  targetPlayerId: string
+): Promise<void> {
+  if (hostPlayerId === targetPlayerId) {
+    throw new Error('不能踢出自己')
+  }
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val()
+  if (room.state !== 'LOBBY') throw new Error('只能在等待大厅踢人')
+  if (room.hostId !== hostPlayerId) throw new Error('只有房主可以踢人')
+  const players = room.players ?? {}
+  if (!players[targetPlayerId]) throw new Error('该玩家不在房间中')
+  const playerRef = ref(db, `rooms/${roomId}/players/${targetPlayerId}`)
+  await remove(playerRef)
+}
+
+/**
  * Reconnect to a room as an existing player (e.g. after refresh). Room may be in any state.
  * @returns roomId, playerId, isHost, and current room state for restoring the correct view.
  */
@@ -146,20 +208,49 @@ export async function reconnectRoom(roomId: string, playerId: string): Promise<{
 
 /**
  * Toggles or sets a player's ready state in the lobby.
- * Only updates the `ready` field for that player.
+ * Verifies the player node exists with a name so RTDB cannot create a ghost `{ ready: true }` after a kick.
  */
 export async function setPlayerReady(
   roomId: string,
   playerId: string,
   ready: boolean
 ): Promise<void> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('房间不存在')
+  const room = snapshot.val()
+  if (room.state !== 'LOBBY') throw new Error('游戏已开始')
+  const player = room.players?.[playerId]
+  if (!player || typeof player.name !== 'string' || !player.name.trim()) {
+    throw new Error('你不在房间中或已被房主移出，请返回首页重新加入')
+  }
   const playerRef = ref(db, `rooms/${roomId}/players/${playerId}`)
   await update(playerRef, { ready })
 }
 
 /**
+ * Host sets how many players this game is for (5–10). Shown in lobby for role list.
+ */
+export async function setExpectedPlayerCount(
+  roomId: string,
+  hostPlayerId: string,
+  count: number
+): Promise<void> {
+  if (count < 5 || count > 10) {
+    throw new Error('人数需在 5～10 人')
+  }
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val()
+  if (room.state !== 'LOBBY') throw new Error('只能在等待大厅修改人数')
+  if (room.hostId !== hostPlayerId) throw new Error('只有房主可设置人数')
+  await update(roomRef, { expectedPlayerCount: count })
+}
+
+/**
  * Assigns shuffled roles to all players and sets state to ROLE_REVEAL.
- * Call when host starts the game from LOBBY. Room must have 5–10 players.
+ * Player count must match room.expectedPlayerCount (or legacy: any 5–10 if unset).
  */
 export async function startGame(roomId: string): Promise<void> {
   const roomRef = ref(db, `rooms/${roomId}`)
@@ -173,16 +264,28 @@ export async function startGame(roomId: string): Promise<void> {
   }
   const players = room.players ?? {}
   const playerIds = Object.keys(players).sort()
+  for (const id of playerIds) {
+    const n = players[id]?.name
+    if (typeof n !== 'string' || !n.trim()) {
+      throw new Error('玩家列表存在无效条目（如被踢后残留），请房主踢除该条目或让其重新加入')
+    }
+  }
   const count = playerIds.length
-  if (count < 5 || count > 10) {
-    throw new Error('Need 5 to 10 players to start')
+  const expectedRaw = room.expectedPlayerCount
+  const expected =
+    expectedRaw != null && expectedRaw !== '' ? Number(expectedRaw) : count
+  if (expected < 5 || expected > 10) {
+    throw new Error('本局人数设定无效，请房主重新选择 5～10 人')
+  }
+  if (count !== expected) {
+    throw new Error(`本局需要 ${expected} 人，当前 ${count} 人，请补齐玩家或让房主调整人数`)
   }
   const notReady = playerIds.filter((id) => !players[id]?.ready)
   if (notReady.length > 0) {
     const names = notReady.map((id) => players[id]?.name ?? id).join('、')
     throw new Error(`请等待所有人准备。未准备：${names}`)
   }
-  const shuffledRoles = shuffle(generateRoles(count))
+  const shuffledRoles = shuffle(generateRoles(expected))
   const rolesObj: Record<string, string> = {}
   const updates: Record<string, unknown> = {
     state: 'ROLE_REVEAL',

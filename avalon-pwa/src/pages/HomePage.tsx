@@ -3,16 +3,29 @@ import { createRoom, joinRoom, reconnectRoom } from '../services/gameEngine'
 import { loadSession } from '../utils/sessionStorage'
 
 type HomePageProps = {
+  notice?: string
+  onClearNotice?: () => void
+  /** First-load reconnect failed (e.g. offline); session still saved — user can retry */
+  showRestoreBanner?: boolean
+  onRetryRestore?: () => void | Promise<void>
   onEnterLobby: (roomId: string, playerId: string, isHost: boolean) => void
   onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string) => void
 }
 
-export function HomePage({ onEnterLobby, onReconnect }: HomePageProps) {
+export function HomePage({
+  notice,
+  onClearNotice,
+  showRestoreBanner,
+  onRetryRestore,
+  onEnterLobby,
+  onReconnect,
+}: HomePageProps) {
   const [name, setName] = useState('')
   const [roomCode, setRoomCode] = useState('')
   const [joinName, setJoinName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [restoreLoading, setRestoreLoading] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -79,6 +92,36 @@ export function HomePage({ onEnterLobby, onReconnect }: HomePageProps) {
     <div className="min-h-screen flex flex-col items-center justify-center p-5 safe-area">
       <h1 className="text-2xl font-bold mb-2 text-gray-800">Avalon</h1>
       <p className="text-gray-500 text-sm mb-6">组队与任务助手</p>
+      {notice && (
+        <div className="w-full max-w-xs mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex gap-2 items-start">
+          <span className="flex-1">{notice}</span>
+          {onClearNotice && (
+            <button type="button" onClick={onClearNotice} className="shrink-0 text-amber-800 font-medium underline">
+              关闭
+            </button>
+          )}
+        </div>
+      )}
+      {showRestoreBanner && onRetryRestore && (
+        <div className="w-full max-w-xs mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          <p className="mb-2">检测到你上次未退出的房间，但暂时无法连接（常见于网络不稳定）。可重试恢复，或检查网络后刷新页面。</p>
+          <button
+            type="button"
+            disabled={restoreLoading}
+            onClick={async () => {
+              setRestoreLoading(true)
+              try {
+                await onRetryRestore()
+              } finally {
+                setRestoreLoading(false)
+              }
+            }}
+            className="w-full min-h-[44px] rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50"
+          >
+            {restoreLoading ? '连接中…' : '重试回到房间'}
+          </button>
+        </div>
+      )}
       {error && <p className="text-red-600 text-sm mb-3 w-full max-w-xs text-center">{error}</p>}
       <div className="flex flex-col gap-5 w-full max-w-xs">
         <div className="flex flex-col gap-2">
