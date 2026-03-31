@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ROLE_LABEL_ZH } from '../utils/roleLabels'
 
 const MISSION_SIZES: Record<number, number[]> = {
   5: [2, 3, 2, 3, 3],
@@ -15,9 +16,10 @@ type Tab = 'overview' | 'roles' | 'missions'
 type GameRulesSheetProps = {
   open: boolean
   onClose: () => void
+  currentRole?: string
 }
 
-export function GameRulesSheet({ open, onClose }: GameRulesSheetProps) {
+export function GameRulesSheet({ open, onClose, currentRole }: GameRulesSheetProps) {
   const [tab, setTab] = useState<Tab>('overview')
 
   if (!open) return null
@@ -83,7 +85,7 @@ export function GameRulesSheet({ open, onClose }: GameRulesSheetProps) {
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           {tab === 'overview' && <OverviewTab />}
-          {tab === 'roles' && <RolesTab />}
+          {tab === 'roles' && <RolesTab currentRole={currentRole} />}
           {tab === 'missions' && <MissionsTab />}
 
           {/* Bottom safe area spacer */}
@@ -161,7 +163,7 @@ function OverviewTab() {
   )
 }
 
-function RolesTab() {
+function RolesTab({ currentRole }: { currentRole?: string }) {
   const roles = [
     {
       name: '梅林',
@@ -215,9 +217,36 @@ function RolesTab() {
       note: '8 人局出场',
     },
   ]
+  const myRoleLabel = currentRole ? ROLE_LABEL_ZH[currentRole] ?? currentRole : ''
+  const roleTips: Record<string, string[]> = {
+    MERLIN: ['你知道大部分坏人，但千万不要太像“先知”。', '发言以引导为主，避免给出过于精确的身份判断。'],
+    PERCIVAL: ['你能看到两位“梅林候选人”，要重点观察发言一致性。', '优先保护更像真梅林的玩家，避免把信息说死。'],
+    SERVANT: ['你没有额外视野，核心是听逻辑与投票轨迹。', '多用“队伍组合是否合理”来判断阵营。'],
+    ASSASSIN: ['坏人若先输到 2:3，你还有一次刺杀翻盘机会。', '留意谁在稳定引导局势，可能是真梅林。'],
+    MORGANA: ['你的目标是制造“真假梅林”混淆。', '发言尽量像在保护好人，但别和同伙完全同调。'],
+    MORDRED: ['梅林看不到你，你是隐藏最深的坏人位。', '关键轮可主动进队制造失败，同时保持“像好人”的发言。'],
+    OBERON: ['你是孤狼位，其他坏人不知道你。', '别和“疑似坏人”强绑定，避免互相暴露。'],
+    MINION: ['你与多数坏人互认，任务是协同控队和带节奏。', '失败票不要太贪，优先保证自己不被坐实。'],
+  }
+  const myRoleTips = currentRole ? roleTips[currentRole] ?? [] : []
 
   return (
     <div className="space-y-3">
+      {currentRole && (
+        <div className="p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.05]">
+          <p className="text-[0.6875rem] text-indigo-300/70 font-medium mb-1.5">你的当前身份</p>
+          <p className="text-sm font-semibold text-indigo-200">{myRoleLabel}</p>
+          {myRoleTips.length > 0 && (
+            <ul className="mt-2 space-y-1.5 list-none p-0">
+              {myRoleTips.map((tip) => (
+                <li key={tip} className="text-[0.75rem] text-indigo-100/80 leading-relaxed">
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {roles.map((r) => (
         <div
           key={r.eng}

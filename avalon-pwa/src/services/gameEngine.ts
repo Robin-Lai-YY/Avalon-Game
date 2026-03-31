@@ -719,3 +719,40 @@ export async function submitAssassinChoice(
     result: evilWins ? 'evil' : 'good',
   })
 }
+
+/**
+ * Host-only emergency action: end current game and return everyone to lobby.
+ * Keeps current players but clears in-game progress so a new game can start.
+ */
+export async function abortToLobby(roomId: string, actorPlayerId: string): Promise<void> {
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val()
+  if (room.hostId !== actorPlayerId) throw new Error('只有房主可以结束本局')
+  const players = room.players ?? {}
+  const playerIds = Object.keys(players).sort()
+  const resetReady: Record<string, unknown> = {}
+  for (const id of playerIds) {
+    resetReady[`players/${id}/ready`] = false
+    resetReady[`players/${id}/role`] = ''
+  }
+  await update(roomRef, {
+    state: 'LOBBY',
+    round: 0,
+    leaderIndex: 0,
+    roles: {},
+    team: {},
+    votes: {},
+    missionVotes: {},
+    missionSuccess: null,
+    history: [],
+    teamVoteHistory: [],
+    roundResultAck: {},
+    score: { good: 0, evil: 0 },
+    result: null,
+    resultReason: null,
+    consecutiveRejects: 0,
+    ...resetReady,
+  })
+}

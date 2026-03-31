@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
   ackRoundResult,
+  abortToLobby,
   isEvilRole,
   resolveMissionResult,
   resolveTeamVote,
@@ -17,10 +18,12 @@ import { MissionPanel } from '../components/MissionPanel'
 import { AssassinPanel } from '../components/AssassinPanel'
 import { RolePeekToggle } from '../components/RolePeekToggle'
 import { VoteHistoryPanel } from '../components/VoteHistoryPanel'
+import { GameRulesSheet } from '../components/GameRulesSheet'
 import { ResultPage } from './ResultPage'
 import { getMissionTeamSize } from '../utils/missionRules'
 
 type RoomData = {
+  hostId?: string
   state: string
   round: number
   leaderIndex: number
@@ -47,13 +50,20 @@ type GamePageProps = {
   roomId: string
   playerId: string
   onPlayAgain?: () => void
+  onForceExit?: () => void
+  onReturnToLobby?: () => void
 }
 
-export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
+export function GamePage({ roomId, playerId, onPlayAgain, onForceExit, onReturnToLobby }: GamePageProps) {
   const [room, setRoom] = useState<RoomData | null>(null)
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
   const [roundResultSaving, setRoundResultSaving] = useState(false)
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const [abortError, setAbortError] = useState('')
+  const [aborting, setAborting] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const roomRef = ref(db, `rooms/${roomId}`)
@@ -62,6 +72,28 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     })
     return () => unsubscribe()
   }, [roomId])
+
+  useEffect(() => {
+    if (room?.state === 'LOBBY') {
+      onReturnToLobby?.()
+    }
+  }, [room?.state, onReturnToLobby])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null
+      if (menuRef.current && target && !menuRef.current.contains(target)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('touchstart', handleOutsideClick)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('touchstart', handleOutsideClick)
+    }
+  }, [menuOpen])
 
   if (!room) {
     return (
@@ -83,6 +115,8 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   const isLeader = playerOrder[leaderIndex] === playerId
   const score = room.score ?? { good: 0, evil: 0 }
   const consecutiveRejects = Number(room.consecutiveRejects) || 0
+  const myRole = room.roles?.[playerId] ?? ''
+  const isHost = room.hostId === playerId
 
   const scoreBar = (
     <div className="avalon-card p-4 flex items-center justify-between">
@@ -116,6 +150,67 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
       playerOrder={playerOrder}
     />
   )
+  const rulesEntryButton = (
+    <button
+      type="button"
+      onClick={() => setRulesOpen(true)}
+      className="min-h-[40px] px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 active:text-slate-200 transition-all duration-200"
+    >
+      <span className="flex items-center gap-1.5">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="opacity-50">
+          <path d="M3.5 2h5a1.5 1.5 0 011.5 1.5v8a.5.5 0 01-.8.4L6.5 10H3.5A1.5 1.5 0 012 8.5v-5A1.5 1.5 0 013.5 2z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M4.5 5h3M4.5 7h2.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+        </svg>
+        查看规则
+      </span>
+    </button>
+  )
+  const topTools = (
+    <div className="mb-1 flex items-start justify-between gap-2">
+      <RolePeekToggle room={room} playerId={playerId} />
+      <div ref={menuRef} className="shrink-0 flex items-center gap-1.5 relative">
+        {rulesEntryButton}
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className={`min-h-[40px] px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+            menuOpen ? 'bg-white/[0.06] text-slate-200' : 'text-slate-400 active:text-slate-200'
+          }`}
+          aria-label="更多操作"
+        >
+          <span className="text-base leading-none">⋯</span>
+        </button>
+        {menuOpen && (
+          <div className="absolute top-full right-0 mt-1.5 min-w-[148px] rounded-xl border border-white/[0.08] bg-[#0c101e]/95 backdrop-blur-sm p-1.5 z-20 shadow-xl">
+            {abortError && <p className="px-2 py-1 text-[0.6875rem] text-red-400/90">{abortError}</p>}
+            {isHost && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  void handleAbortToLobby()
+                }}
+                disabled={aborting}
+                className="w-full text-left min-h-[34px] px-2.5 rounded-lg text-xs font-medium text-amber-300/90 bg-amber-500/10 border border-amber-500/25 disabled:opacity-50"
+              >
+                {aborting ? '结束中…' : '结束本局'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                handleForceExit()
+              }}
+              className="w-full text-left min-h-[34px] px-2.5 rounded-lg text-xs font-medium text-slate-300/90 active:bg-white/[0.05]"
+            >
+              退出游戏
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   function teamIdsFromRoom(r: RoomData): string[] {
     const t = r.team
@@ -137,6 +232,27 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     await resolveMissionResult(roomId)
   }
 
+  async function handleAbortToLobby() {
+    if (!isHost) return
+    const confirmed = window.confirm('结束当前对局并返回大厅？所有人会回到准备状态。')
+    if (!confirmed) return
+    setAbortError('')
+    setAborting(true)
+    try {
+      await abortToLobby(roomId, playerId)
+    } catch (e) {
+      setAbortError(e instanceof Error ? e.message : '结束本局失败')
+    } finally {
+      setAborting(false)
+    }
+  }
+
+  function handleForceExit() {
+    const confirmed = window.confirm('退出并清除本机重连记录？你将返回首页。')
+    if (!confirmed) return
+    onForceExit?.()
+  }
+
   if (room.state === 'MISSION_VOTING') {
     const teamIds = teamIdsFromRoom(room)
     const isOnMission = teamIds.includes(playerId)
@@ -144,7 +260,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const myRole = room.roles?.[playerId] ?? ''
     return (
       <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5 animate-page-enter">
-        <RolePeekToggle room={room} playerId={playerId} />
+        {topTools}
         {scoreBar}
         {voteHistoryEl}
         <MissionPanel
@@ -153,6 +269,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
           canVoteFail={isEvilRole(myRole)}
           onVote={handleMissionVote}
         />
+        <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
       </div>
     )
   }
@@ -166,7 +283,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const iHaveAcked = acks[playerId] === true
     return (
       <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5">
-        <RolePeekToggle room={room} playerId={playerId} />
+        {topTools}
         {scoreBar}
         {voteHistoryEl}
         <div
@@ -210,6 +327,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
             {roundResultSaving ? '提交中…' : '继续'}
           </button>
         )}
+        <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
       </div>
     )
   }
@@ -225,7 +343,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const isAssassin = roles[playerId] === 'ASSASSIN'
     return (
       <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5 animate-page-enter">
-        <RolePeekToggle room={room} playerId={playerId} />
+        {topTools}
         {scoreBar}
         {voteHistoryEl}
         <AssassinPanel
@@ -235,6 +353,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
           onConfirm={(targetId) => submitAssassinChoice(roomId, playerId, targetId)}
           isAssassin={isAssassin}
         />
+        <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
       </div>
     )
   }
@@ -244,7 +363,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
     const myVote = room.votes?.[playerId] ?? null
     return (
       <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5 animate-page-enter">
-        <RolePeekToggle room={room} playerId={playerId} />
+        {topTools}
         {scoreBar}
         {voteHistoryEl}
         <VotePanel
@@ -254,6 +373,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
           onVote={handleVote}
           consecutiveRejects={consecutiveRejects}
         />
+        <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
       </div>
     )
   }
@@ -261,11 +381,12 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
   if (room.state !== 'TEAM_SELECTION') {
     return (
       <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5">
-        <RolePeekToggle room={room} playerId={playerId} />
+        {topTools}
         {voteHistoryEl}
         <div className="flex flex-col items-center justify-center flex-1">
           <p className="text-slate-500 text-sm">State: {room.state}</p>
         </div>
+        <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
       </div>
     )
   }
@@ -287,7 +408,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
       className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-5 animate-page-enter"
       data-testid={isLeader ? 'team-selector-leader' : 'team-selector'}
     >
-      <RolePeekToggle room={room} playerId={playerId} />
+      {topTools}
       {scoreBar}
       {voteHistoryEl}
       {saveError && <p className="text-red-400/90 text-sm">{saveError}</p>}
@@ -301,6 +422,7 @@ export function GamePage({ roomId, playerId, onPlayAgain }: GamePageProps) {
         disabled={!isLeader || saving}
         consecutiveRejects={consecutiveRejects}
       />
+      <GameRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} currentRole={myRole} />
     </div>
   )
 }

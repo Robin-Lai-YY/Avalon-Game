@@ -202,6 +202,8 @@ export default function App() {
         roomId={roomId}
         playerId={playerId}
         onPlayAgain={() => void handleBack()}
+        onForceExit={() => void handleBack()}
+        onReturnToLobby={() => setView('lobby')}
       />
     )
   }
