@@ -54,17 +54,47 @@ export function ResultPage({ roomId, onPlayAgain }: ResultPageProps) {
 
   return (
     <div className="min-h-dvh flex flex-col px-5 pt-6 pb-10 max-w-md mx-auto animate-page-enter">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0" aria-hidden>
+        <span
+          className={`absolute top-0 bottom-0 w-[46%] ${
+            isGoodWin
+              ? 'bg-gradient-to-r from-transparent via-blue-300/14 to-transparent animate-screen-sweep-good'
+              : 'bg-gradient-to-l from-transparent via-red-300/14 to-transparent animate-screen-sweep-evil'
+          }`}
+        />
+      </div>
       {/* Victory Header */}
       <div className="text-center mb-6">
         <p className="section-label mb-3">游戏结束</p>
         <div
-          className={`rounded-2xl p-8 animate-result-reveal ${
+          className={`relative overflow-hidden rounded-2xl p-8 animate-result-reveal ${
             isGoodWin
               ? 'bg-gradient-to-b from-blue-950/40 to-transparent border border-blue-500/20 avalon-card-glow-good'
-              : 'bg-gradient-to-b from-red-950/40 to-transparent border border-red-500/20 avalon-card-glow-evil'
+              : 'bg-gradient-to-b from-red-950/40 to-transparent border border-red-500/20 avalon-card-glow-evil animate-impact-shake'
           }`}
           style={{ backdropFilter: 'blur(16px)' }}
         >
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden>
+            <span
+              className={`absolute inset-3 rounded-2xl border ${
+                isGoodWin ? 'border-blue-300/30 animate-burst-good' : 'border-red-300/30 animate-burst-evil'
+              }`}
+            />
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+              <span
+                key={i}
+                className={`absolute w-1.5 h-1.5 rounded-full ${
+                  isGoodWin ? 'bg-blue-300/80 animate-spark-float' : 'bg-red-300/80 animate-ember-fall'
+                }`}
+                style={{
+                  left: `${10 + i * 12}%`,
+                  bottom: isGoodWin ? '20%' : undefined,
+                  top: isGoodWin ? undefined : '18%',
+                  animationDelay: `${i * 90}ms`,
+                }}
+              />
+            ))}
+          </div>
           <div className={`text-5xl mb-3 ${isGoodWin ? 'animate-win-glow-good' : 'animate-win-glow-evil'}`}>
             {isGoodWin ? '⚔' : '🗡'}
           </div>

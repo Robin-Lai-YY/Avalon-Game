@@ -300,6 +300,93 @@ a.tap-target {
   }
 }
 
+@keyframes burst-ring-good {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes burst-ring-evil {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes spark-float {
+  0% {
+    transform: translateY(10px) scale(0.9);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(-24px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+@keyframes ember-fall {
+  0% {
+    transform: translateY(-12px) scale(0.85);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(20px) scale(1.05);
+    opacity: 0;
+  }
+}
+
+@keyframes screen-sweep-good {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateX(120%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes screen-sweep-evil {
+  0% {
+    transform: translateX(120%) skewX(18deg);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.38;
+  }
+  100% {
+    transform: translateX(-120%) skewX(18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes impact-shake {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+  100% { transform: translateX(0); }
+}
+
 /* ---- Animation Classes ---- */
 .animate-fade-in {
   animation: fade-in 0.3s ease-out both;
@@ -365,6 +452,34 @@ a.tap-target {
 
 .animate-page-enter {
   animation: page-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-burst-good {
+  animation: burst-ring-good 0.75s ease-out both;
+}
+
+.animate-burst-evil {
+  animation: burst-ring-evil 0.75s ease-out both;
+}
+
+.animate-spark-float {
+  animation: spark-float 1s ease-out both;
+}
+
+.animate-ember-fall {
+  animation: ember-fall 1s ease-out both;
+}
+
+.animate-screen-sweep-good {
+  animation: screen-sweep-good 0.9s ease-out both;
+}
+
+.animate-screen-sweep-evil {
+  animation: screen-sweep-evil 0.9s ease-out both;
+}
+
+.animate-impact-shake {
+  animation: impact-shake 0.22s ease-out both;
 }
 
 /* Staggered children animations */
@@ -513,4 +628,16 @@ a.tap-target {
 
 .section-spacing-lg {
   margin-bottom: 2rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-burst-good,
+  .animate-burst-evil,
+  .animate-spark-float,
+  .animate-ember-fall,
+  .animate-screen-sweep-good,
+  .animate-screen-sweep-evil,
+  .animate-impact-shake {
+    animation: none !important;
+  }
 }

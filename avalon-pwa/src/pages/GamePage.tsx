@@ -286,14 +286,44 @@ export function GamePage({ roomId, playerId, onPlayAgain, onForceExit, onReturnT
         {topTools}
         {scoreBar}
         {voteHistoryEl}
+        <div className="pointer-events-none fixed inset-0 overflow-hidden z-0" aria-hidden>
+          <span
+            className={`absolute top-0 bottom-0 w-[44%] ${
+              success
+                ? 'bg-gradient-to-r from-transparent via-emerald-300/16 to-transparent animate-screen-sweep-good'
+                : 'bg-gradient-to-l from-transparent via-red-300/14 to-transparent animate-screen-sweep-evil'
+            }`}
+          />
+        </div>
         <div
-          className={`rounded-2xl p-6 text-center animate-result-reveal ${
+          className={`relative overflow-hidden rounded-2xl p-6 text-center animate-result-reveal ${
             success
               ? 'bg-gradient-to-b from-emerald-950/40 to-transparent border border-emerald-500/20 avalon-card-glow-good animate-success-pulse'
-              : 'bg-gradient-to-b from-red-950/40 to-transparent border border-red-500/20 avalon-card-glow-evil animate-fail-shake'
+              : 'bg-gradient-to-b from-red-950/40 to-transparent border border-red-500/20 avalon-card-glow-evil animate-fail-shake animate-impact-shake'
           }`}
           style={{ backdropFilter: 'blur(16px)' }}
         >
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl" aria-hidden>
+            <span
+              className={`absolute inset-2 rounded-2xl border ${
+                success ? 'border-emerald-300/35 animate-burst-good' : 'border-red-300/30 animate-burst-evil'
+              }`}
+            />
+            {[0, 1, 2, 3, 4].map((i) => (
+              <span
+                key={i}
+                className={`absolute w-1.5 h-1.5 rounded-full ${
+                  success ? 'bg-emerald-300/80 animate-spark-float' : 'bg-red-300/80 animate-ember-fall'
+                }`}
+                style={{
+                  left: `${18 + i * 16}%`,
+                  bottom: success ? '28%' : undefined,
+                  top: success ? undefined : '20%',
+                  animationDelay: `${i * 70}ms`,
+                }}
+              />
+            ))}
+          </div>
           <div className={`text-4xl mb-2 ${success ? 'animate-win-glow-good' : 'animate-win-glow-evil'}`}>
             {success ? '✦' : '✧'}
           </div>
