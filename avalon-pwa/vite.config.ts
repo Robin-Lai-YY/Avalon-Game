@@ -18,6 +18,14 @@ export default defineConfig({
         theme_color: '#060814',
         background_color: '#060814',
         display: 'standalone',
+        icons: [
+          {
+            src: '/favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
