@@ -3,6 +3,7 @@ import { createRoom, joinRoom, reconnectRoom } from '../services/gameEngine'
 import { buildReconnectUrl, loadSession } from '../utils/sessionStorage'
 
 type HomePageProps = {
+  onBackToHub?: () => void
   notice?: string
   onClearNotice?: () => void
   showRestoreBanner?: boolean
@@ -12,6 +13,7 @@ type HomePageProps = {
 }
 
 export function HomePage({
+  onBackToHub,
   notice,
   onClearNotice,
   showRestoreBanner,
@@ -109,6 +111,18 @@ export function HomePage({
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-5 pt-6 pb-12 animate-page-enter">
+      {onBackToHub && (
+        <div className="w-full max-w-lg mb-4">
+          <button
+            type="button"
+            onClick={onBackToHub}
+            className="min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2 text-xs font-medium text-slate-300/90 transition-colors active:bg-white/[0.08]"
+          >
+            ← 返回游戏大厅
+          </button>
+        </div>
+      )}
+
       {/* Hero Cover */}
       <div className="w-full max-w-lg mx-auto shrink-0 mb-8">
         <div className="relative rounded-2xl overflow-hidden">

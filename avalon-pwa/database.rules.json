@@ -3,6 +3,10 @@
     "rooms": {
       ".read": true,
       ".write": true
+    },
+    "undercoverRooms": {
+      ".read": true,
+      ".write": true
     }
   }
 }
