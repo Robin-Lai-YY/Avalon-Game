@@ -1,5 +1,5 @@
 import { get, ref, remove, runTransaction, set, update } from 'firebase/database'
-import { UNDERCOVER_WORD_PAIRS } from '../data/undercoverWords'
+import { UNDERCOVER_HIDDEN_WORD_PAIRS, UNDERCOVER_WORD_PAIRS } from '../data/undercoverWords'
 import { shuffle } from '../utils/shuffle'
 import { db } from './firebase'
 import type {
@@ -102,9 +102,22 @@ function getTopCandidates(votes: Record<string, string>): string[] {
   return candidates
 }
 
-function assignRolesAndWords(players: Record<string, UndercoverPlayer>, settings: UndercoverRoleSettings) {
-  const pair = UNDERCOVER_WORD_PAIRS[randomInt(UNDERCOVER_WORD_PAIRS.length)]
+function assignRolesAndWords(
+  players: Record<string, UndercoverPlayer>,
+  settings: UndercoverRoleSettings,
+  useHiddenBank: boolean
+) {
+  const pool =
+    useHiddenBank && UNDERCOVER_HIDDEN_WORD_PAIRS.length > 0
+      ? UNDERCOVER_HIDDEN_WORD_PAIRS
+      : UNDERCOVER_WORD_PAIRS
+  const pair = pool[randomInt(pool.length)]
   if (!pair) throw new Error('词库为空，请先配置词条')
+  const civilianUsesA = randomInt(2) === 0
+  const civilianWord = civilianUsesA ? pair.wordA : pair.wordB
+  const undercoverWord = civilianUsesA ? pair.wordB : pair.wordA
+  const wordRound = { wordA: pair.wordA, wordB: pair.wordB, civilianUsesA }
+
   const playerIds = Object.keys(players).sort()
   const shuffled = shuffle(playerIds)
 
@@ -122,7 +135,7 @@ function assignRolesAndWords(players: Record<string, UndercoverPlayer>, settings
     votes: {},
     tieCandidates: [],
     tieRevoteCount: 0,
-    wordPair: pair,
+    wordPair: wordRound,
     lastEliminatedId: null,
     lastEliminatedRole: null,
     resultWinner: null,
@@ -135,7 +148,7 @@ function assignRolesAndWords(players: Record<string, UndercoverPlayer>, settings
     updates[`players/${id}/isAlive`] = true
     updates[`players/${id}/ready`] = false
     updates[`players/${id}/word`] =
-      role === 'civilian' ? pair.civilianWord : role === 'undercover' ? pair.undercoverWord : null
+      role === 'civilian' ? civilianWord : role === 'undercover' ? undercoverWord : null
   }
 
   return updates
@@ -165,6 +178,7 @@ export async function createUndercoverRoom(
         role: '',
         word: null,
         reconnectToken,
+        preferHiddenBank: false,
       },
     },
     votes: {},
@@ -219,6 +233,7 @@ export async function joinUndercoverRoom(
     role: '',
     word: null,
     reconnectToken,
+    preferHiddenBank: false,
   } as UndercoverPlayer)
 
   const nextCount = currentCount + 1
@@ -280,6 +295,29 @@ export async function reconnectUndercoverByToken(roomId: string, token: string):
   }
 }
 
+/**
+ * Host removes another player from the lobby (e.g. ghost or AFK). LOBBY only.
+ */
+export async function kickPlayerFromUndercoverLobby(
+  roomId: string,
+  hostPlayerId: string,
+  targetPlayerId: string
+): Promise<void> {
+  if (hostPlayerId === targetPlayerId) {
+    throw new Error('不能踢出自己')
+  }
+  const roomRef = ref(db, `undercoverRooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val() as UndercoverRoom
+  if (room.state !== 'LOBBY') throw new Error('只能在等待大厅踢人')
+  if (room.hostId !== hostPlayerId) throw new Error('只有房主可以踢人')
+  const players = room.players ?? {}
+  if (!players[targetPlayerId]) throw new Error('该玩家不在房间中')
+  const playerRef = ref(db, `undercoverRooms/${roomId}/players/${targetPlayerId}`)
+  await remove(playerRef)
+}
+
 export async function leaveUndercoverLobby(roomId: string, playerId: string): Promise<void> {
   const roomRef = ref(db, `undercoverRooms/${roomId}`)
   const snapshot = await get(roomRef)
@@ -311,6 +349,21 @@ export async function setUndercoverPlayerReady(roomId: string, playerId: string,
   const me = room.players?.[playerId]
   if (!me) throw new Error('你不在房间中')
   await update(ref(db, `undercoverRooms/${roomId}/players/${playerId}`), { ready })
+}
+
+export async function setUndercoverHiddenBankPreference(
+  roomId: string,
+  playerId: string,
+  preferHiddenBank: boolean
+): Promise<void> {
+  const roomRef = ref(db, `undercoverRooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('房间不存在')
+  const room = snapshot.val() as UndercoverRoom
+  if (room.state !== 'LOBBY') throw new Error('游戏已开始')
+  const me = room.players?.[playerId]
+  if (!me) throw new Error('你不在房间中')
+  await update(ref(db, `undercoverRooms/${roomId}/players/${playerId}`), { preferHiddenBank })
 }
 
 export async function setUndercoverRoleSettings(
@@ -363,7 +416,10 @@ export async function startUndercoverGame(roomId: string, hostPlayerId: string):
   const validationError = validateRoleSettings(playerCount, settings)
   if (validationError) throw new Error(validationError)
 
-  const updates = assignRolesAndWords(players, settings)
+  const allPreferHidden = playerIds.every((id) => players[id]?.preferHiddenBank === true)
+  const useHiddenBank =
+    allPreferHidden && UNDERCOVER_HIDDEN_WORD_PAIRS.length > 0
+  const updates = assignRolesAndWords(players, settings, useHiddenBank)
   await update(roomRef, { ...updates, roleSettings: settings })
 }
 
@@ -541,6 +597,7 @@ export async function restartUndercoverToLobby(roomId: string, hostPlayerId: str
     updates[`players/${id}/isAlive`] = true
     updates[`players/${id}/role`] = ''
     updates[`players/${id}/word`] = null
+    updates[`players/${id}/preferHiddenBank`] = false
   }
 
   await update(roomRef, updates)

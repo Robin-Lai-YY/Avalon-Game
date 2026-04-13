@@ -146,11 +146,17 @@ export function UndercoverGamePage({ roomId, playerId, onExit, onReturnToLobby }
     setError('')
     try {
       await restartUndercoverToLobby(roomId, playerId)
+      onReturnToLobby?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : '再来一局失败')
     } finally {
       setRestarting(false)
     }
+  }
+
+  function handleExitGameConfirm() {
+    if (!window.confirm('确定要退出卧底游戏吗？')) return
+    onExit()
   }
 
   if (!room || !me) {
@@ -167,14 +173,7 @@ export function UndercoverGamePage({ roomId, playerId, onExit, onReturnToLobby }
 
   return (
     <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-4 animate-page-enter">
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={onExit}
-          className="min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] px-3 py-1.5 text-xs text-slate-300"
-        >
-          返回大厅
-        </button>
+      <div className="flex items-center justify-end">
         <div ref={menuRef} className="flex items-center gap-1.5 relative">
           <button
             type="button"
@@ -199,7 +198,7 @@ export function UndercoverGamePage({ roomId, playerId, onExit, onReturnToLobby }
                 type="button"
                 onClick={() => {
                   setMenuOpen(false)
-                  onExit()
+                  handleExitGameConfirm()
                 }}
                 className="w-full text-left min-h-[34px] px-2.5 rounded-lg text-xs font-medium text-slate-300/90 active:bg-white/[0.05]"
               >

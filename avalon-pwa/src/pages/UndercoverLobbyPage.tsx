@@ -3,11 +3,14 @@ import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
   getRecommendedRoleCounts,
+  kickPlayerFromUndercoverLobby,
+  setUndercoverHiddenBankPreference,
   setUndercoverPlayerReady,
   setUndercoverRoleSettings,
   startUndercoverGame,
 } from '../services/undercoverEngine'
 import type { UndercoverRoom } from '../types/undercover'
+import { PlayerList } from '../components/PlayerList'
 
 type UndercoverLobbyPageProps = {
   roomId: string
@@ -28,6 +31,9 @@ export function UndercoverLobbyPage({
   const [error, setError] = useState('')
   const [starting, setStarting] = useState(false)
   const [setting, setSetting] = useState(false)
+  const [kickError, setKickError] = useState('')
+  const [kickingId, setKickingId] = useState<string | null>(null)
+  const [hiddenPrefSaving, setHiddenPrefSaving] = useState(false)
   const wasInLobbyWithSelf = useRef(false)
 
   useEffect(() => {
@@ -78,6 +84,19 @@ export function UndercoverLobbyPage({
     recommendedBlankCount: recommendations.recommendedBlankCount,
   }
   const civilianCount = Math.max(playerIds.length - settings.undercoverCount - settings.blankCount, 0)
+  const myPreferHidden = room?.players[playerId]?.preferHiddenBank === true
+
+  async function handleHiddenBankToggle(next: boolean) {
+    setError('')
+    setHiddenPrefSaving(true)
+    try {
+      await setUndercoverHiddenBankPreference(roomId, playerId, next)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setHiddenPrefSaving(false)
+    }
+  }
 
   async function handleReady() {
     setError('')
@@ -98,6 +117,19 @@ export function UndercoverLobbyPage({
       setError(e instanceof Error ? e.message : '设置失败')
     } finally {
       setSetting(false)
+    }
+  }
+
+  async function handleKick(targetId: string) {
+    if (!isHost) return
+    setKickError('')
+    setKickingId(targetId)
+    try {
+      await kickPlayerFromUndercoverLobby(roomId, playerId, targetId)
+    } catch (e) {
+      setKickError(e instanceof Error ? e.message : '踢人失败')
+    } finally {
+      setKickingId(null)
     }
   }
 
@@ -207,23 +239,60 @@ export function UndercoverLobbyPage({
           <p className="text-xs text-slate-400 mt-2">平民人数：{civilianCount}</p>
         </div>
 
-        <div className="avalon-card p-4">
-          <p className="section-label mb-3">玩家列表</p>
-          <div className="flex flex-col gap-2">
-            {playerIds.map((id) => (
-              <div
-                key={id}
-                className="min-h-[48px] flex items-center justify-between rounded-lg bg-white/[0.02] border border-white/[0.06] px-3"
-              >
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-slate-200">{room.players[id]?.name ?? id}</p>
-                  {id === room.hostId && <span className="badge-host">Host</span>}
-                </div>
-                <span className={`text-xs ${room.players[id]?.ready ? 'text-emerald-300' : 'text-slate-500'}`}>
-                  {room.players[id]?.ready ? '已准备' : '未准备'}
-                </span>
-              </div>
-            ))}
+        <div className="avalon-card p-4 border border-violet-500/15">
+          <p className="section-label mb-2">隐藏题库</p>
+          <p className="text-sm text-slate-300/90 leading-relaxed">
+            是否使用隐藏题库由每人自己决定，列表里不会显示别人的选择。仅当房间内所有人都同意时，本局才会从隐藏题库抽词；否则会使用常规题库。
+          </p>
+          <div className="mt-4 flex flex-col gap-3">
+            <label className="flex items-start gap-3 cursor-pointer tap-row">
+              <input
+                type="checkbox"
+                checked={myPreferHidden}
+                disabled={hiddenPrefSaving}
+                onChange={(e) => void handleHiddenBankToggle(e.target.checked)}
+                className="custom-checkbox mt-1 shrink-0"
+              />
+              <span className="text-sm text-slate-200 leading-snug">
+                我同意本局在满足全员条件时使用隐藏题库
+              </span>
+            </label>
+            <p className="text-[0.6875rem] text-violet-300/80 pl-[1.875rem]">
+              你的选择（仅自己可见）：{myPreferHidden ? '已开启' : '未开启'}
+            </p>
+          </div>
+        </div>
+
+        <div className="avalon-card overflow-hidden">
+          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+            <h2 className="section-label">玩家列表</h2>
+            <span className="text-[0.6875rem] text-slate-500">{playerIds.length} 人</span>
+          </div>
+          <div className="px-5 pb-4">
+            {isHost && (
+              <p className="text-[0.6875rem] text-slate-500 mb-2.5">房主可将占坑或离线的玩家踢出</p>
+            )}
+            {kickError && <p className="text-red-400/90 text-sm mb-2">{kickError}</p>}
+            <PlayerList
+              players={Object.fromEntries(
+                playerIds.map((id) => {
+                  const p = room.players[id]!
+                  return [
+                    id,
+                    {
+                      name: p.name,
+                      ready: p.ready,
+                      role: typeof p.role === 'string' ? p.role : '',
+                    },
+                  ]
+                })
+              )}
+              hostId={room.hostId}
+              canKick={isHost}
+              viewerPlayerId={playerId}
+              onKick={handleKick}
+              kickingId={kickingId}
+            />
           </div>
         </div>
 

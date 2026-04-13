@@ -44,6 +44,13 @@ export function UndercoverRulesSheet({ open, onClose }: UndercoverRulesSheetProp
           </section>
 
           <section>
+            <h3 className="text-sm font-semibold text-white mb-2">准备阶段 · 隐藏题库</h3>
+            <p className="text-[0.8125rem] text-slate-300/90 leading-relaxed">
+              每人可在大厅自行选择是否同意使用隐藏题库；界面不会展示其他人的选择。仅当所有人都同意时，本局从隐藏题库抽词，否则使用常规题库。
+            </p>
+          </section>
+
+          <section>
             <h3 className="text-sm font-semibold text-white mb-2">流程</h3>
             <ol className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed list-decimal pl-4">
               <li>房主设置角色人数并开始游戏，系统发放词语。</li>

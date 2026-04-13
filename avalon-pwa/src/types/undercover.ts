@@ -4,9 +4,15 @@ export type UndercoverWinner = 'CIVILIAN_WIN' | 'UNDERCOVER_WIN' | 'BLANK_WIN'
 
 export type UndercoverPhase = 'LOBBY' | 'WORD_REVEAL' | 'VOTING' | 'TIE_SPEAK' | 'END'
 
+/** 一组近义词，A/B 对称；每局开局随机决定谁是平民词、谁是卧底词。 */
 export type UndercoverWordPair = {
-  civilianWord: string
-  undercoverWord: string
+  wordA: string
+  wordB: string
+}
+
+/** 本局已随机分配后的词对（写入房间）。 */
+export type UndercoverWordRound = UndercoverWordPair & {
+  civilianUsesA: boolean
 }
 
 export type UndercoverPlayer = {
@@ -16,6 +22,8 @@ export type UndercoverPlayer = {
   role: UndercoverRole | ''
   word: string | null
   reconnectToken: string
+  /** 大厅内是否同意本局使用隐藏题库；仅本人应在 UI 中展示，勿在列表中泄露他人选择。 */
+  preferHiddenBank?: boolean
 }
 
 export type UndercoverRoleSettings = {
@@ -45,7 +53,7 @@ export type UndercoverRoom = {
   players: Record<string, UndercoverPlayer>
   votes: UndercoverVoteMap
   tieCandidates: string[]
-  wordPair: UndercoverWordPair | null
+  wordPair: UndercoverWordRound | null
   lastEliminatedId: string | null
   lastEliminatedRole: UndercoverRole | null
   resultWinner: UndercoverWinner | null
