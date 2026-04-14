@@ -7,6 +7,7 @@ import { GamePage } from './pages/GamePage'
 import { UndercoverHomePage } from './pages/UndercoverHomePage'
 import { UndercoverLobbyPage } from './pages/UndercoverLobbyPage'
 import { UndercoverGamePage } from './pages/UndercoverGamePage'
+import { LiarsDiceGamePage } from './pages/LiarsDiceGamePage'
 import { leaveLobby, reconnectByToken, reconnectRoom } from './services/gameEngine'
 import {
   leaveUndercoverLobby,
@@ -36,6 +37,7 @@ type View =
   | 'undercoverHome'
   | 'undercoverLobby'
   | 'undercoverGame'
+  | 'liarsDiceGame'
 
 function updateUrlRoom(roomId: string, token?: string, game?: 'avalon' | 'undercover') {
   const url = new URL(window.location.href)
@@ -67,6 +69,7 @@ export default function App() {
   const [playerId, setPlayerId] = useState('') // avalon
   const [undercoverRoomId, setUndercoverRoomId] = useState('')
   const [undercoverPlayerId, setUndercoverPlayerId] = useState('')
+  const [liarsDiceCount, setLiarsDiceCount] = useState(5)
   const [restoring, setRestoring] = useState(true)
   const [homeNotice, setHomeNotice] = useState('')
   const [undercoverNotice, setUndercoverNotice] = useState('')
@@ -366,6 +369,16 @@ export default function App() {
     )
   }
 
+  if (view === 'liarsDiceGame') {
+    return wrap(
+      <LiarsDiceGamePage
+        diceCount={liarsDiceCount}
+        onDiceCountChange={setLiarsDiceCount}
+        onBackToHub={() => setView('hub')}
+      />
+    )
+  }
+
   if (restoring) {
     return wrap(
       <div className="min-h-dvh flex items-center justify-center p-4">
@@ -383,6 +396,7 @@ export default function App() {
       <GameHubPage
         onEnterAvalon={() => setView('home')}
         onEnterUndercover={() => setView('undercoverHome')}
+        onEnterLiarsDice={() => setView('liarsDiceGame')}
       />
     )
   }
