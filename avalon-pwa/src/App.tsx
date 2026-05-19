@@ -8,12 +8,20 @@ import { UndercoverHomePage } from './pages/UndercoverHomePage'
 import { UndercoverLobbyPage } from './pages/UndercoverLobbyPage'
 import { UndercoverGamePage } from './pages/UndercoverGamePage'
 import { LiarsDiceGamePage } from './pages/LiarsDiceGamePage'
+import { NinjaHomePage } from './pages/NinjaHomePage'
+import { NinjaLobbyPage } from './pages/NinjaLobbyPage'
+import { NinjaGamePage } from './pages/NinjaGamePage'
 import { leaveLobby, reconnectByToken, reconnectRoom } from './services/gameEngine'
 import {
   leaveUndercoverLobby,
   reconnectUndercoverByToken,
   reconnectUndercoverRoom,
 } from './services/undercoverEngine'
+import {
+  leaveNinjaLobby,
+  reconnectNinjaByToken,
+  reconnectNinjaRoom,
+} from './services/ninjaEngine'
 import {
   clearSession,
   isReconnectPermanentFailure,
@@ -26,6 +34,12 @@ import {
   loadUndercoverSession,
   saveUndercoverSession,
 } from './utils/undercoverSessionStorage'
+import {
+  clearNinjaSession,
+  isNinjaReconnectPermanentFailure,
+  loadNinjaSession,
+  saveNinjaSession,
+} from './utils/ninjaSessionStorage'
 import './index.css'
 
 type View =
@@ -38,8 +52,11 @@ type View =
   | 'undercoverLobby'
   | 'undercoverGame'
   | 'liarsDiceGame'
+  | 'ninjaHome'
+  | 'ninjaLobby'
+  | 'ninjaGame'
 
-function updateUrlRoom(roomId: string, token?: string, game?: 'avalon' | 'undercover') {
+function updateUrlRoom(roomId: string, token?: string, game?: 'avalon' | 'undercover' | 'ninja') {
   const url = new URL(window.location.href)
   if (roomId) {
     url.searchParams.set('room', roomId)
@@ -69,10 +86,13 @@ export default function App() {
   const [playerId, setPlayerId] = useState('') // avalon
   const [undercoverRoomId, setUndercoverRoomId] = useState('')
   const [undercoverPlayerId, setUndercoverPlayerId] = useState('')
+  const [ninjaRoomId, setNinjaRoomId] = useState('')
+  const [ninjaPlayerId, setNinjaPlayerId] = useState('')
   const [liarsDiceCount, setLiarsDiceCount] = useState(5)
   const [restoring, setRestoring] = useState(true)
   const [homeNotice, setHomeNotice] = useState('')
   const [undercoverNotice, setUndercoverNotice] = useState('')
+  const [ninjaNotice, setNinjaNotice] = useState('')
   const [failedInitialRestore, setFailedInitialRestore] = useState(false)
 
   useEffect(() => {
@@ -96,6 +116,25 @@ export default function App() {
           .catch((e) => {
             if (isUndercoverReconnectPermanentFailure(e)) clearUndercoverSession()
             setUndercoverNotice('卧底重连链接无效或已过期，请重新加入房间。')
+          })
+          .finally(() => setRestoring(false))
+        return
+      }
+
+      if (game === 'ninja') {
+        reconnectNinjaByToken(urlRoom, urlToken)
+          .then(({ roomId: rid, playerId: pid, isHost: host, state, reconnectToken: newToken }) => {
+            saveNinjaSession(rid, pid, host, newToken)
+            setNinjaRoomId(rid)
+            setNinjaPlayerId(pid)
+            setNinjaNotice('')
+            updateUrlRoom(rid, newToken, 'ninja')
+            if (state === 'LOBBY') setView('ninjaLobby')
+            else setView('ninjaGame')
+          })
+          .catch((e) => {
+            if (isNinjaReconnectPermanentFailure(e)) clearNinjaSession()
+            setNinjaNotice('忍者之夜重连链接无效或已过期，请重新加入房间。')
           })
           .finally(() => setRestoring(false))
         return
@@ -125,8 +164,11 @@ export default function App() {
 
     const avalonSession = loadSession()
     const undercoverSession = loadUndercoverSession()
+    const ninjaSession = loadNinjaSession()
+    const activeSessionCount =
+      (avalonSession ? 1 : 0) + (undercoverSession ? 1 : 0) + (ninjaSession ? 1 : 0)
 
-    if (avalonSession && !undercoverSession) {
+    if (avalonSession && activeSessionCount === 1) {
       reconnectRoom(avalonSession.roomId, avalonSession.playerId)
         .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
           saveSession(rid, pid, host, avalonSession.reconnectToken)
@@ -150,7 +192,7 @@ export default function App() {
       return
     }
 
-    if (undercoverSession && !avalonSession) {
+    if (undercoverSession && activeSessionCount === 1) {
       reconnectUndercoverRoom(undercoverSession.roomId, undercoverSession.playerId)
         .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
           saveUndercoverSession(rid, pid, host, undercoverSession.reconnectToken)
@@ -171,7 +213,28 @@ export default function App() {
       return
     }
 
-    if (avalonSession && undercoverSession) {
+    if (ninjaSession && activeSessionCount === 1) {
+      reconnectNinjaRoom(ninjaSession.roomId, ninjaSession.playerId)
+        .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
+          saveNinjaSession(rid, pid, host, ninjaSession.reconnectToken)
+          setNinjaRoomId(rid)
+          setNinjaPlayerId(pid)
+          setNinjaNotice('')
+          updateUrlRoom(rid, ninjaSession.reconnectToken, 'ninja')
+          if (state === 'LOBBY') setView('ninjaLobby')
+          else setView('ninjaGame')
+        })
+        .catch((e) => {
+          if (isNinjaReconnectPermanentFailure(e)) {
+            clearNinjaSession()
+          }
+          setNinjaNotice('未能恢复忍者之夜对局，请重新加入。')
+        })
+        .finally(() => setRestoring(false))
+      return
+    }
+
+    if (activeSessionCount > 1) {
       setHomeNotice('检测到多个游戏会话，请从游戏大厅选择需要恢复的对局。')
       setRestoring(false)
       return
@@ -312,6 +375,61 @@ export default function App() {
     clearUrlParams()
   }
 
+  function handleEnterNinjaLobby(
+    rid: string,
+    pid: string,
+    host: boolean,
+    reconnectToken?: string
+  ) {
+    setNinjaNotice('')
+    setNinjaRoomId(rid)
+    setNinjaPlayerId(pid)
+    setView('ninjaLobby')
+    saveNinjaSession(rid, pid, host, reconnectToken)
+    updateUrlRoom(rid, reconnectToken, 'ninja')
+  }
+
+  function handleNinjaReconnect(
+    rid: string,
+    pid: string,
+    host: boolean,
+    state: string,
+    reconnectToken?: string
+  ) {
+    setNinjaRoomId(rid)
+    setNinjaPlayerId(pid)
+    setNinjaNotice('')
+    saveNinjaSession(rid, pid, host, reconnectToken)
+    updateUrlRoom(rid, reconnectToken, 'ninja')
+    if (state === 'LOBBY') setView('ninjaLobby')
+    else setView('ninjaGame')
+  }
+
+  const handleRemovedFromNinjaLobby = useCallback(() => {
+    setNinjaNotice('你已被移出房间，或房间已解散。')
+    setView('ninjaHome')
+    setNinjaRoomId('')
+    setNinjaPlayerId('')
+    clearNinjaSession()
+    clearUrlParams()
+  }, [])
+
+  async function handleNinjaBack() {
+    if (view === 'ninjaLobby' && ninjaRoomId && ninjaPlayerId) {
+      try {
+        await leaveNinjaLobby(ninjaRoomId, ninjaPlayerId)
+      } catch {
+        // Still return hub
+      }
+    }
+    setNinjaNotice('')
+    setView('hub')
+    setNinjaRoomId('')
+    setNinjaPlayerId('')
+    clearNinjaSession()
+    clearUrlParams()
+  }
+
   if (view === 'lobby') {
     return wrap(
       <LobbyPage
@@ -379,6 +497,29 @@ export default function App() {
     )
   }
 
+  if (view === 'ninjaLobby') {
+    return wrap(
+      <NinjaLobbyPage
+        roomId={ninjaRoomId}
+        playerId={ninjaPlayerId}
+        onBack={() => void handleNinjaBack()}
+        onRemovedFromLobby={handleRemovedFromNinjaLobby}
+        onEnterGame={() => setView('ninjaGame')}
+      />
+    )
+  }
+
+  if (view === 'ninjaGame') {
+    return wrap(
+      <NinjaGamePage
+        roomId={ninjaRoomId}
+        playerId={ninjaPlayerId}
+        onExit={() => void handleNinjaBack()}
+        onReturnToLobby={() => setView('ninjaLobby')}
+      />
+    )
+  }
+
   if (restoring) {
     return wrap(
       <div className="min-h-dvh flex items-center justify-center p-4">
@@ -397,6 +538,7 @@ export default function App() {
         onEnterAvalon={() => setView('home')}
         onEnterUndercover={() => setView('undercoverHome')}
         onEnterLiarsDice={() => setView('liarsDiceGame')}
+        onEnterNinja={() => setView('ninjaHome')}
       />
     )
   }
@@ -409,6 +551,18 @@ export default function App() {
         onClearNotice={() => setUndercoverNotice('')}
         onEnterLobby={handleEnterUndercoverLobby}
         onReconnect={handleUndercoverReconnect}
+      />
+    )
+  }
+
+  if (view === 'ninjaHome') {
+    return wrap(
+      <NinjaHomePage
+        onBackToHub={() => setView('hub')}
+        notice={ninjaNotice}
+        onClearNotice={() => setNinjaNotice('')}
+        onEnterLobby={handleEnterNinjaLobby}
+        onReconnect={handleNinjaReconnect}
       />
     )
   }

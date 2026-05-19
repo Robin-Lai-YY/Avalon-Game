@@ -27,3 +27,27 @@ Security rules in `database.rules.json` allow read/write under `rooms` for devel
 ```bash
 firebase deploy --only database
 ```
+
+## Night of the Ninja (`ninjaRooms/{roomId}`)
+
+```
+ninjaRooms
+ └ {roomId}
+     ├ hostId                 (string)
+     ├ state                  (string) – LOBBY | HOUSE_REVEAL | DRAFT_PICK_1 | DRAFT_PICK_2 |
+     │                                    NIGHT_SPY | NIGHT_MYSTIC | NIGHT_TRICKSTER |
+     │                                    NIGHT_BLIND_ASSASSIN | NIGHT_SHINOBI | NIGHT_MASTERMIND |
+     │                                    REVEAL | GAME_END
+     ├ round                  (number)
+     ├ players                (object) – { [playerId]: NinjaPlayer }
+     ├ houseCardAssignments   (object) – { [playerId]: HouseCard }
+     ├ tokenBag               (array)  – remaining honor tokens (shuffled at game start)
+     ├ ninjaDiscardPile       (array)  – cards discarded this game
+     ├ currentNight           (object?) – per-phase resolution state with pendingAction / reactive window
+     ├ reveal                 (object?) – per-round reveal summary
+     ├ resultWinnerIds        (array?)  – set on GAME_END
+     └ privateState           (object) – { [playerId]: { current: NinjaPrivateRoundState } }
+```
+
+Per-player private info (spy/mystic/shinobi peeks) lives under `privateState/{playerId}/current`
+so each client can subscribe to only their own subtree.

@@ -1,6 +1,13 @@
 # Avalon Game
 
-多人实时阿瓦隆（The Resistance: Avalon）网页版，支持 5–10 人局。PWA 应用，使用 Firebase Realtime Database 同步房间与游戏状态。
+多人实时派对游戏合集（PWA），目前包含 4 款游戏，使用 Firebase Realtime Database 同步房间与游戏状态。
+
+## 游戏列表
+
+- **阿瓦隆（5–10 人）**：完整阵营推理 / 任务投票 / 刺杀，详见 [Avalon_Roles.md](./Avalon_Roles.md)
+- **谁是卧底（4–12 人）**：词语相近，淘汰找出卧底
+- **大话骰（本地多人）**：摇骰、开盅，支持手势
+- **忍者之夜（4–11 人）**：鹤莲流派对决，轮抽忍者牌进行暗杀与情报，最快累计 10 荣誉者获胜
 
 ## 功能概览
 
