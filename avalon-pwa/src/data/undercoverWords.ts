@@ -7,8 +7,6 @@ export const UNDERCOVER_WORD_PAIRS: UndercoverSymmetricWordRow[] = [
   { wordA: "螺蛳粉", wordB: "臭豆腐" },
   { wordA: "广场舞", wordB: "广播体操" },
   { wordA: "秋裤", wordB: "毛裤" },
-  { wordA: "男厕所", wordB: "女厕所" },
-  { wordA: "前男友", wordB: "前女友" },
   { wordA: "方便面", wordB: "火腿肠" },
 
   { wordA: "唐僧", wordB: "法海" },
@@ -232,24 +230,12 @@ export const UNDERCOVER_WORD_PAIRS: UndercoverSymmetricWordRow[] = [
   { wordA: "西装", wordB: "燕尾服" },
   { wordA: "桑拿", wordB: "温泉" },
   { wordA: "酒店", wordB: "民宿" },
-];
 
-/**
- * 隐藏题库：仅当房间内所有玩家在大厅均开启「同意使用隐藏题库」时，本局从这里抽词。
- * 风格偏脑洞/成人向玩笑，与常规题库区分。
- */
-export const UNDERCOVER_HIDDEN_WORD_PAIRS: UndercoverSymmetricWordRow[] = [
-  { wordA: "渣男", wordB: "绿茶" },
   { wordA: "备胎", wordB: "舔狗" },
-  { wordA: "画饼", wordB: "PUA" },
-  { wordA: "海王", wordB: "中央空调" },
-  { wordA: "凡尔赛", wordB: "装穷" },
 
   { wordA: "摸鱼", wordB: "躺平" },
   { wordA: "甩锅", wordB: "背锅" },
-  { wordA: "画大饼", wordB: "打鸡血" },
 
-  { wordA: "前任", wordB: "白月光" },
   { wordA: "网恋", wordB: "奔现" },
   { wordA: "官宣", wordB: "秀恩爱" },
   { wordA: "分手", wordB: "拉黑" },
@@ -271,106 +257,95 @@ export const UNDERCOVER_HIDDEN_WORD_PAIRS: UndercoverSymmetricWordRow[] = [
   { wordA: "暧昧", wordB: "调情" },
   { wordA: "心动", wordB: "上头" },
   { wordA: "撩人", wordB: "勾引" },
-  { wordA: "欲擒故纵", wordB: "欲拒还迎" },
   { wordA: "试探", wordB: "暗示" },
-
-  { wordA: "贴贴", wordB: "抱抱" },
-  { wordA: "亲亲", wordB: "啵啵" },
-  { wordA: "依偎", wordB: "缠绵" },
 
   { wordA: "酒店", wordB: "民宿" },
 
-  { wordA: "夜生活", wordB: "夜晚活动" },
+];
 
-  { wordA: "酒局", wordB: "聚会" },
-
-  { wordA: "心机", wordB: "套路" },
-  { wordA: "套路", wordB: "把戏" },
-  { wordA: "演戏", wordB: "假装" },
-  { wordA: "欲望", wordB: "冲动" },
-
-  { wordA: "情话", wordB: "甜言蜜语" },
-
-  { wordA: "依恋", wordB: "沉迷" },
-
-  { wordA: "撒娇", wordB: "卖萌" },
-  { wordA: "温柔", wordB: "体贴" },
-  { wordA: "冷淡", wordB: "疏远" },
-  { wordA: "忽冷忽热", wordB: "若即若离" },
-
-  { wordA: "暧昧对象", wordB: "备选对象" },
-  { wordA: "恋爱脑", wordB: "理性派" },
-  { wordA: "占有欲", wordB: "控制欲" },
-  { wordA: "吃醋", wordB: "嫉妒" },
-
-  { wordA: "烛光", wordB: "灯光" },
-  { wordA: "香薰", wordB: "精油" },
-
+/**
+ * 隐藏题库：仅当房间内所有玩家在大厅均开启「同意使用隐藏题库」时，本局从这里抽词。
+ * 风格偏脑洞/成人向玩笑，与常规题库区分。
+ */
+export const UNDERCOVER_HIDDEN_WORD_PAIRS: UndercoverSymmetricWordRow[] = [
   { wordA: "挑逗", wordB: "勾引" },
   { wordA: "呻吟", wordB: "喘息" },
-
-  { wordA: "前戏", wordB: "热身" },
-
-  { wordA: "节奏", wordB: "频率" },
-
   { wordA: "制服诱惑", wordB: "角色扮演" },
-  { wordA: "暧昧氛围", wordB: "浪漫氛围" },
-
-  { wordA: "夜深人静", wordB: "孤男寡女" },
-
-  { wordA: "克制", wordB: "压抑" },
 
   { wordA: "荷尔蒙", wordB: "多巴胺" },
-  { wordA: "心跳加速", wordB: "呼吸急促" },
 
   { wordA: "占有欲", wordB: "控制欲" },
-  { wordA: "捡肥皂", wordB: "搓后背" },
   { wordA: "杜蕾斯", wordB: "杰士邦" },
   { wordA: "情趣内衣", wordB: "比基尼" },
   { wordA: "伟哥", wordB: "六味地黄丸" },
   { wordA: "钢管舞", wordB: "脱衣舞" },
-  { wordA: "洗浴中心", wordB: "按摩店" },
-  { wordA: "走后门", wordB: "潜规则" },
-
-  { wordA: "老实人", wordB: "接盘侠" },
-  { wordA: "查岗", wordB: "捉奸" },
-  { wordA: "绿茶婊", wordB: "白莲花" },
   { wordA: "FWB", wordB: "ONS" },
 
   { wordA: "安全套", wordB: "避孕药" },
   { wordA: "卫生棉", wordB: "护垫" },
-  { wordA: "润滑剂", wordB: "凡士林" },
 
-  { wordA: "推油", wordB: "按摩" },
   { wordA: "处男", wordB: "宅男" },
   { wordA: "胸罩", wordB: "吊带" },
 
-  { wordA: "黑丝袜", wordB: "白丝袜" },
   { wordA: "帐篷", wordB: "雨伞" },
   { wordA: "诱惑", wordB: "调情" },
 
   { wordA: "自慰", wordB: "冥想" },
   { wordA: "打屁股", wordB: "鼓掌" },
 
-  { wordA: "避孕套", wordB: "气球" },
   { wordA: "震动棒", wordB: "电动牙刷" },
   { wordA: "润滑剂", wordB: "沐浴露" },
 
   { wordA: "手铐", wordB: "手镯" },
   { wordA: "皮鞭", wordB: "皮带" },
-  { wordA: "纸巾", wordB: "湿巾" },
 
-  { wordA: "敏感", wordB: "脆弱" },
-  { wordA: "节奏", wordB: "韵律" },
-  { wordA: "摩擦", wordB: "碰撞" },
+  { wordA: "挑逗", wordB: "勾引" },
+  { wordA: "种草莓", wordB: "拔罐" },
+  { wordA: "避孕套", wordB: "指套" },
+  { wordA: "裸睡", wordB: "裸奔" },
+  { wordA: "断片", wordB: "宿醉" },
+  { wordA: "杜蕾斯", wordB: "冈本" },
+  { wordA: "调情", wordB: "偷情" },
+  { wordA: "制服诱惑", wordB: "角色扮演" },
+  { wordA: "前男友", wordB: "前夫" },
 
-  { wordA: "内裤", wordB: "打底裤" },
-  { wordA: "尖叫", wordB: "呐喊" },
-  { wordA: "技巧", wordB: "方法" },
-
-  { wordA: "舔唇", wordB: "咬唇" },
-
-  { wordA: "轻声细语", wordB: "低语呢喃" },
-
-  { wordA: "上瘾", wordB: "沉迷" },
+  { wordA: "高潮", wordB: "射精" },
+  { wordA: "跳蛋", wordB: "振动棒" },
+  
+  { wordA: "吹箫", wordB: "舔阴" },
+  { wordA: "传教士", wordB: "观音坐莲" },
+  { wordA: "皮鞭", wordB: "手铐" },
+  { wordA: "G点", wordB: "阴蒂" },
+  
+  { wordA: "口爆", wordB: "颜射" },
+  { wordA: "情趣内衣", wordB: "丁字裤" },
+  { wordA: "双管齐下", wordB: "三人行" },
+  { wordA: "假阳具", wordB: "飞机杯" },
+  { wordA: "深喉", wordB: "口交" },
+  { wordA: "捆绑", wordB: "滴蜡" },
+  { wordA: "潮吹", wordB: "失禁" },
+  { wordA: "老司机", wordB: "推油" },
+  { wordA: "波推", wordB: "打飞机" },
+  { wordA: "自慰", wordB: "手淫" },
+  { wordA: "精液", wordB: "爱液" },
+  { wordA: "野战", wordB: "车震" },
+  { wordA: "内射", wordB: "口爆" },
+  { wordA: "狗爬式", wordB: "老汉推车" },
+  { wordA: "情趣用品店", wordB: "成人展" },
+  { wordA: "春药", wordB: "催情水" },
+  { wordA: "乳交", wordB: "足交" },
+  { wordA: "黑丝", wordB: "渔网袜" },
+  { wordA: "一夜情", wordB: "约炮" },
+  { wordA: "乳头", wordB: "阴唇" },
+  { wordA: "口活", wordB: "69" },
+  { wordA: "安全期", wordB: "卵泡期" },
+  { wordA: "阳痿", wordB: "早泄" },
+  { wordA: "偷窥", wordB: "露出" },
+  { wordA: "震动", wordB: "抽插" },
+  { wordA: "包皮", wordB: "阴茎" },
+  { wordA: "扩肛", wordB: "润滑" },
+  { wordA: "绿帽子", wordB: "苦主" },
+  { wordA: "前列腺", wordB: "阴蒂" },
+  { wordA: "换妻", wordB: "乱交" },
+  { wordA: "处女膜", wordB: "初恋" },
 ];
