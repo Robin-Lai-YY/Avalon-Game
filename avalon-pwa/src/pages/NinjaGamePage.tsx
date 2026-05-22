@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
   acknowledgeHouseReveal,
   acknowledgeNinjaReveal,
-  expireReactiveWindow,
   finalizeRoundReveal,
   getEligibleThiefTargetIds,
   primeNightPhaseIfNeeded,
@@ -28,11 +27,13 @@ import type {
   NinjaCardKind,
   NinjaPrivateRoundState,
   NinjaRoom,
+  PendingAction,
   TricksterVariant,
 } from '../types/ninja'
 import { NinjaRulesSheet } from '../components/NinjaRulesSheet'
 import { HouseCardLabel, NinjaCardView, ninjaKindLabel } from '../components/NinjaCardView'
 import { NinjaReactiveWindowView } from '../components/NinjaReactiveWindow'
+import { NinjaSeatTable } from '../components/NinjaSeatTable'
 
 type NinjaGamePageProps = {
   roomId: string
@@ -46,12 +47,12 @@ const PHASE_LABEL: Record<NinjaRoom['state'], string> = {
   HOUSE_REVEAL: '查看流派牌',
   DRAFT_PICK_1: '轮抽 · 第 1 选',
   DRAFT_PICK_2: '轮抽 · 第 2 选',
-  NIGHT_SPY: '夜晚 1 · 情报员',
-  NIGHT_MYSTIC: '夜晚 2 · 灵媒',
-  NIGHT_TRICKSTER: '夜晚 3 · 欺诈师',
+  NIGHT_SPY: '夜晚 1 · 密探',
+  NIGHT_MYSTIC: '夜晚 2 · 隐士',
+  NIGHT_TRICKSTER: '夜晚 3 · 骗徒',
   NIGHT_BLIND_ASSASSIN: '夜晚 4 · 盲眼刺客',
-  NIGHT_SHINOBI: '夜晚 5 · 忍者',
-  NIGHT_MASTERMIND: '夜晚 6 · 幕后黑手',
+  NIGHT_SHINOBI: '夜晚 5 · 上忍',
+  NIGHT_MASTERMIND: '夜晚 6 · 首脑',
   REVEAL: '身份揭晓',
   GAME_END: '游戏结束',
 }
@@ -74,6 +75,42 @@ const TRICKSTER_LABEL: Record<TricksterVariant, string> = {
   judgement: '审判',
 }
 
+const PHASE_STEPS: { state: NinjaRoom['state']; label: string }[] = [
+  { state: 'HOUSE_REVEAL', label: '流派' },
+  { state: 'DRAFT_PICK_1', label: '轮抽1' },
+  { state: 'DRAFT_PICK_2', label: '轮抽2' },
+  { state: 'NIGHT_SPY', label: '密探' },
+  { state: 'NIGHT_MYSTIC', label: '隐士' },
+  { state: 'NIGHT_TRICKSTER', label: '骗徒' },
+  { state: 'NIGHT_BLIND_ASSASSIN', label: '刺客' },
+  { state: 'NIGHT_SHINOBI', label: '上忍' },
+  { state: 'NIGHT_MASTERMIND', label: '首脑' },
+  { state: 'REVEAL', label: '揭示' },
+]
+
+function getOrderedPlayerIds(room: NinjaRoom): string[] {
+  const players = room.players ?? {}
+  const seated = (room.seatOrder ?? []).filter((id) => !!players[id])
+  const missing = Object.keys(players)
+    .filter((id) => !seated.includes(id))
+    .sort()
+  return [...seated, ...missing]
+}
+
+function getTargetableIdsForPending(room: NinjaRoom, playerId: string, pa: PendingAction | null | undefined): string[] {
+  if (!pa || pa.playerId !== playerId) return []
+  if (pa.step !== 'pick_target') return []
+  const players = room.players ?? {}
+  const aliveOthers = getOrderedPlayerIds(room).filter((id) => id !== playerId && players[id]?.isAlive)
+  if (pa.kind === 'trickster' && pa.variant === 'shapeshifter') {
+    return getOrderedPlayerIds(room).filter((id) => players[id]?.isAlive)
+  }
+  if (pa.kind === 'trickster' && pa.variant === 'thief') {
+    return getEligibleThiefTargetIds(room, playerId)
+  }
+  return aliveOthers
+}
+
 export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: NinjaGamePageProps) {
   const [room, setRoom] = useState<NinjaRoom | null>(null)
   const [privateState, setPrivateState] = useState<NinjaPrivateRoundState | null>(null)
@@ -85,6 +122,7 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   const [smView, setSmView] = useState<'token' | 'house'>('house')
   const [smGiveId, setSmGiveId] = useState<string | null>(null)
   const [smTakeId, setSmTakeId] = useState<string | null>(null)
+  const [draftSelectedId, setDraftSelectedId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -105,7 +143,12 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
 
   useEffect(() => {
     setHouseRevealed(false)
+    setDraftSelectedId(null)
   }, [room?.round])
+
+  useEffect(() => {
+    setDraftSelectedId(null)
+  }, [room?.state])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -168,6 +211,13 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
 
   // Reset spirit-merchant local UI when the action changes.
   const pa = room?.currentNight?.pendingAction
+  const activePlayerId = room?.currentNight?.pendingAction?.playerId
+    ?? room?.currentNight?.resolutionQueue?.[room.currentNight?.resolutionIndex ?? -1]?.playerId
+    ?? null
+  const targetableIds = useMemo(
+    () => (room ? getTargetableIdsForPending(room, playerId, pa) : []),
+    [room, playerId, pa]
+  )
   useEffect(() => {
     if (pa?.step !== 'spirit_merchant_swap') {
       setSmView('house')
@@ -193,8 +243,13 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   async function handleAck() {
     void safeRun(() => acknowledgeHouseReveal(roomId, playerId))
   }
-  async function handleDraftPick(cardId: string) {
-    void safeRun(() => submitDraftPick(roomId, playerId, cardId))
+  function handleDraftSelect(cardId: string) {
+    if (myDraftPick) return
+    setDraftSelectedId((cur) => (cur === cardId ? null : cardId))
+  }
+  async function handleDraftConfirm() {
+    if (!draftSelectedId) return
+    void safeRun(() => submitDraftPick(roomId, playerId, draftSelectedId))
   }
   async function handleNightChoice(cardId: string, choice: 'play' | 'hold') {
     void safeRun(() => submitNightDeclaration(roomId, playerId, cardId, choice))
@@ -224,9 +279,6 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   async function handleReactive(choice: 'monk' | 'martyr' | 'pass') {
     void safeRun(() => submitReactiveResponse(roomId, playerId, choice))
   }
-  async function handleReactiveExpire() {
-    void expireReactiveWindow(roomId).catch(() => {})
-  }
   async function handleAckReveal() {
     void safeRun(() => acknowledgeNinjaReveal(roomId, playerId))
   }
@@ -254,38 +306,48 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   }
 
   const phaseTitle = PHASE_LABEL[room.state] ?? room.state
+  const orderedIds = getOrderedPlayerIds(room)
+  const aliveCount = orderedIds.filter((id) => room.players?.[id]?.isAlive).length
+  const publicRevealCount = (room.publiclyRevealedHouseIds ?? []).length
+  const activeName = activePlayerId ? room.players?.[activePlayerId]?.name ?? '等待中' : '无'
 
   return (
-    <div className="min-h-dvh flex flex-col px-5 pt-5 pb-10 max-w-md mx-auto gap-4 animate-page-enter">
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-xs tracking-widest text-slate-400">{roomId}</p>
-        <div ref={menuRef} className="flex items-center gap-1.5 relative">
+    <div className="relative min-h-dvh overflow-x-hidden px-4 pb-8 pt-4 text-slate-100 animate-page-enter">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(225,29,72,0.16),transparent_32%),radial-gradient(circle_at_80%_18%,rgba(37,99,235,0.14),transparent_28%),linear-gradient(180deg,#020617,#070a13_46%,#020617)]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 opacity-[0.07] bg-[linear-gradient(rgba(255,255,255,0.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.7)_1px,transparent_1px)] bg-[size:44px_44px]" />
+      <div className="mx-auto flex max-w-5xl flex-col gap-4">
+      <div className="relative z-50 flex items-center justify-between rounded-2xl border border-white/[0.08] bg-slate-950/70 px-3 py-2 shadow-xl shadow-black/20 backdrop-blur">
+        <div>
+          <p className="text-[0.625rem] uppercase tracking-[0.22em] text-rose-200/65">Room</p>
+          <p className="font-mono text-xs tracking-widest text-slate-100">{roomId}</p>
+        </div>
+        <div ref={menuRef} className="relative z-50 flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setRulesOpen(true)}
-            className="min-h-[40px] px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 active:text-slate-200 transition-all"
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-sm font-semibold text-slate-300 transition-colors duration-200 hover:bg-white/[0.06] hover:text-white active:text-slate-200 cursor-pointer"
           >
             规则
           </button>
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className={`min-h-[40px] px-2.5 py-1.5 rounded-lg text-sm font-medium ${
-              menuOpen ? 'bg-white/[0.06] text-slate-200' : 'text-slate-400 active:text-slate-200'
-            }`}
+            className={`min-h-[40px] px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 ${
+              menuOpen ? 'bg-white/[0.08] text-slate-100' : 'text-slate-300 hover:bg-white/[0.06] hover:text-white active:text-slate-200'
+            } cursor-pointer`}
             aria-label="更多操作"
           >
             <span className="text-base leading-none">⋯</span>
           </button>
           {menuOpen && (
-            <div className="absolute top-full right-0 mt-1.5 min-w-[132px] rounded-xl border border-white/[0.08] bg-[#0c101e]/95 backdrop-blur-sm p-1.5 z-20 shadow-xl">
+            <div className="absolute top-full right-0 z-[999] mt-1.5 min-w-[132px] rounded-xl border border-white/[0.08] bg-slate-950/95 backdrop-blur p-1.5 shadow-2xl">
               <button
                 type="button"
                 onClick={() => {
                   setMenuOpen(false)
                   handleExitConfirm()
                 }}
-                className="w-full text-left min-h-[34px] px-2.5 rounded-lg text-xs font-medium text-slate-300/90 active:bg-white/[0.05]"
+                className="w-full text-left min-h-[34px] px-2.5 rounded-lg text-xs font-medium text-slate-300/90 transition-colors hover:bg-white/[0.06] active:bg-white/[0.05] cursor-pointer"
               >
                 退出游戏
               </button>
@@ -294,31 +356,25 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
         </div>
       </div>
 
-      <div className="avalon-card p-4 border border-indigo-500/25 animate-scale-bounce">
-        <p className="section-label mb-1">{phaseTitle}</p>
-        <div className="flex items-baseline justify-between">
-          <p className="text-xl font-bold text-indigo-200">第 {room.round || 1} 回合</p>
-          <p className="text-xs text-slate-400">荣誉 {honorScore} 分 / {honorCount} 张</p>
-        </div>
-      </div>
+      <NinjaPhaseTracker room={room} phaseTitle={phaseTitle} />
 
       {/* My house card peek */}
-      <div className="avalon-card p-4">
-        <p className="section-label mb-2">你的流派牌</p>
+      <div className="rounded-[1.5rem] border border-white/[0.08] bg-slate-950/65 p-4 shadow-xl shadow-black/10 backdrop-blur">
+        <p className="mb-2 text-[0.6875rem] font-bold uppercase tracking-[0.22em] text-slate-400">你的流派牌</p>
         <button
           type="button"
           onClick={() => setHouseRevealed((v) => !v)}
           disabled={!myHouseCard || !me.canViewHouse}
-          className="w-full min-h-[52px] rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-left active:bg-white/[0.08] disabled:opacity-50"
+          className="w-full min-h-[62px] rounded-2xl border border-white/[0.08] bg-gradient-to-r from-white/[0.055] to-white/[0.025] px-4 py-3 text-left transition-colors duration-200 hover:border-rose-200/25 hover:bg-white/[0.07] active:bg-white/[0.08] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
         >
-          <p className="text-[0.6875rem] text-slate-500 mb-1">
+          <p className="text-[0.6875rem] text-slate-500 mb-1 uppercase tracking-[0.16em]">
             {!me.canViewHouse
               ? '已被变形者交换，无法直接查看'
               : houseRevealed
                 ? '点击隐藏'
                 : '点击查看'}
           </p>
-          <p className="text-lg font-semibold tracking-wide">
+          <p className="text-lg font-black tracking-wide">
             {!myHouseCard
               ? '尚未发牌'
               : !me.canViewHouse
@@ -330,9 +386,44 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
         </button>
       </div>
 
+      <div className="relative overflow-hidden rounded-[1.75rem] border border-rose-200/10 bg-slate-950/70 p-4 shadow-2xl shadow-rose-950/20 backdrop-blur">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-rose-500/10 blur-3xl" />
+        <div className="relative mb-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[0.6875rem] font-bold uppercase tracking-[0.24em] text-rose-200/75">Battle Table</p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-white">战局核心</h2>
+            </div>
+            <div className="rounded-2xl border border-amber-200/15 bg-amber-300/10 px-3 py-2 text-right">
+              <p className="text-[0.625rem] uppercase tracking-[0.2em] text-amber-100/60">Action</p>
+              <p className="max-w-[120px] truncate text-sm font-black text-amber-50">{activeName}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <BattleStat label="存活" value={`${aliveCount}/${orderedIds.length}`} />
+            <BattleStat label="公开" value={`${publicRevealCount}`} />
+            <BattleStat label="我的荣誉" value={`${honorScore}`} />
+            <BattleStat label="我的标记" value={`${honorCount}`} />
+          </div>
+        </div>
+        <NinjaSeatTable
+          room={room}
+          viewerPlayerId={playerId}
+          mode="game"
+          activePlayerId={activePlayerId}
+          targetableIds={targetableIds}
+          onTargetClick={handleTarget}
+        />
+        {targetableIds.length > 0 && (
+          <p className="mt-3 rounded-xl border border-rose-200/15 bg-rose-500/10 px-3 py-2 text-center text-xs font-semibold text-rose-100">
+            目标模式：点击发光座位选择目标。
+          </p>
+        )}
+      </div>
+
       {/* Phase-specific UI */}
       {room.state === 'HOUSE_REVEAL' && (
-        <div className="avalon-card p-4">
+        <div className="rounded-[1.5rem] border border-white/[0.08] bg-slate-950/65 p-4 shadow-xl shadow-black/10 backdrop-blur">
           <p className="text-sm text-slate-300 leading-relaxed">
             查看完毕后请点击下方按钮。所有人确认后将进入轮抽。
           </p>
@@ -340,7 +431,7 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
             type="button"
             onClick={handleAck}
             disabled={loading || me.hasAcknowledgedHouse}
-            className="w-full mt-3 min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
+            className="w-full mt-3 min-h-[46px] rounded-2xl border border-rose-200/25 bg-[linear-gradient(135deg,rgba(225,29,72,0.28),rgba(15,23,42,0.78),rgba(37,99,235,0.22))] font-black text-rose-50 shadow-xl shadow-rose-950/25 transition-colors duration-200 hover:border-rose-100/45 hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-100/70 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             {me.hasAcknowledgedHouse ? '已确认，等待其他玩家…' : '我已查看身份'}
           </button>
@@ -348,24 +439,39 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
       )}
 
       {(room.state === 'DRAFT_PICK_1' || room.state === 'DRAFT_PICK_2') && (
-        <div className="avalon-card p-4">
-          <p className="section-label mb-2">
+        <div className="rounded-[1.5rem] border border-white/[0.08] bg-slate-950/65 p-4 shadow-xl shadow-black/10 backdrop-blur">
+          <p className="mb-3 text-[0.6875rem] font-bold uppercase tracking-[0.22em] text-slate-400">
             {room.state === 'DRAFT_PICK_1' ? '从 3 张中选 1 张保留，其余 2 张传给左邻' : '从 2 张中选 1 张保留，弃 1 张'}
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex gap-3 overflow-x-auto px-0.5 py-2">
             {myDraftHand.map((c) => (
-              <NinjaCardView
-                key={c.id}
-                card={c}
-                selected={myDraftPick === c.id}
-                disabled={loading || myDraftPick !== null}
-                onClick={() => handleDraftPick(c.id)}
-              />
+              <div key={c.id} className="min-w-[230px] max-w-[250px] flex-1">
+                <NinjaCardView
+                  card={c}
+                  selected={(myDraftPick ?? draftSelectedId) === c.id}
+                  disabled={loading || myDraftPick !== null}
+                  onClick={() => handleDraftSelect(c.id)}
+                />
+              </div>
             ))}
           </div>
-          {myDraftPick && (
-            <p className="text-xs text-slate-400 mt-3">已选择，等待其他玩家…</p>
-          )}
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">
+              {myDraftPick
+                ? '已确认，等待其他玩家'
+                : draftSelectedId
+                  ? '已预选，可点其他卡重选，或再次点击取消'
+                  : '先点选一张卡，再确认保留'}
+            </p>
+            <button
+              type="button"
+              onClick={handleDraftConfirm}
+              disabled={loading || !!myDraftPick || !draftSelectedId}
+              className="min-h-[40px] rounded-xl border border-rose-200/20 bg-rose-500/20 px-4 text-sm font-black text-rose-50 transition-colors duration-200 hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+            >
+              确认保留
+            </button>
+          </div>
         </div>
       )}
 
@@ -417,15 +523,12 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
           onMonk={() => handleReactive('monk')}
           onMartyr={() => handleReactive('martyr')}
           onPass={() => handleReactive('pass')}
-          onExpire={handleReactiveExpire}
         />
       )}
 
       <PrivateRevealsCard privateState={privateState} room={room} />
 
       <PublicRevealsCard room={room} />
-
-      <PlayerStatusList room={room} playerId={playerId} />
 
       <MyHandCard hand={myHand} />
 
@@ -446,6 +549,83 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
 
       {error && <p className="text-sm text-red-400/90">{error}</p>}
       <NinjaRulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      </div>
+    </div>
+  )
+}
+
+function NinjaPhaseTracker({ room, phaseTitle }: { room: NinjaRoom; phaseTitle: string }) {
+  const currentIndex = PHASE_STEPS.findIndex((s) => s.state === room.state)
+  const index = currentIndex === -1 ? 0 : currentIndex
+  const currentNight = room.currentNight
+  const declared = currentNight && !currentNight.declarationsLocked
+    ? (() => {
+        const kind = currentNight.kind
+        const players = room.players ?? {}
+        const eligible = getOrderedPlayerIds(room).filter((id) =>
+          players[id]?.isAlive && (players[id]?.hand ?? []).some((c) => c.kind === kind)
+        )
+        const done = eligible.filter((id) => {
+          const p = players[id]!
+          return (p.hand ?? [])
+            .filter((c) => c.kind === kind)
+            .every((c) => p.nightChoices?.[c.id] !== undefined)
+        }).length
+        return `${done}/${eligible.length}`
+      })()
+    : null
+  const queue = currentNight?.resolutionQueue ?? []
+  const queueText = currentNight?.declarationsLocked && queue.length > 0
+    ? `${Math.min((currentNight.resolutionIndex ?? 0) + 1, queue.length)}/${queue.length}`
+    : null
+
+  return (
+    <div className="avalon-card p-4 border border-indigo-500/25 animate-scale-bounce">
+      <div className="mb-3 flex items-baseline justify-between">
+        <div>
+          <p className="section-label mb-1">{phaseTitle}</p>
+          <p className="text-xl font-bold text-indigo-200">第 {room.round || 1} 回合</p>
+        </div>
+        {(declared || queueText) && (
+          <p className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[0.6875rem] text-slate-300">
+            {declared ? `声明 ${declared}` : `结算 ${queueText}`}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {PHASE_STEPS.map((step, i) => {
+          const active = i === index
+          const done = i < index
+          return (
+            <div key={step.state} className="flex min-w-fit items-center gap-1">
+              <div className={`flex h-8 min-w-8 items-center justify-center rounded-full border text-[0.625rem] font-bold ${
+                active
+                  ? 'border-indigo-300 bg-indigo-400/25 text-indigo-100 shadow-lg shadow-indigo-500/20'
+                  : done
+                    ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200'
+                    : 'border-white/[0.08] bg-white/[0.03] text-slate-500'
+              }`}>
+                {i + 1}
+              </div>
+              <span className={`text-[0.625rem] ${active ? 'text-indigo-100' : done ? 'text-emerald-200/80' : 'text-slate-500'}`}>
+                {step.label}
+              </span>
+              {i < PHASE_STEPS.length - 1 && (
+                <span className={`h-px w-5 ${done ? 'bg-emerald-400/30' : 'bg-white/[0.08]'}`} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BattleStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2.5 py-2">
+      <p className="text-[0.5625rem] uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="mt-0.5 text-sm font-black text-slate-100">{value}</p>
     </div>
   )
 }
@@ -506,11 +686,11 @@ function NightPhasePanel({
       )}
 
       {!locked && myCardsThisPhase.length > 0 && (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex gap-3 overflow-x-auto px-0.5 py-2">
           {myCardsThisPhase.map((c) => {
             const choice = me?.nightChoices?.[c.id]
             return (
-              <div key={c.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+              <div key={c.id} className="min-w-[204px] max-w-[224px] rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
                 <NinjaCardView card={c} compact />
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <button
@@ -639,7 +819,7 @@ function PendingActionPanel({
         ? '当前没有玩家的荣誉标记数比你多——盗贼无效，请稍候自动结算。'
         : '只能选择标记数比你多的玩家'
     } else if (pa.kind === 'trickster' && pa.variant === 'judgement') {
-      helpText = '此击杀无视镜僧与殉道者，目标会直接死亡'
+      helpText = '此击杀无视还施僧与殉道者，目标会直接死亡'
     }
     return (
       <div className="avalon-card p-4 border border-amber-500/30 bg-amber-950/15">
@@ -647,6 +827,7 @@ function PendingActionPanel({
         <p className="text-sm text-amber-100/85 mb-1">
           {ninjaKindLabel(pa.kind)}{variantLabel ? ` · ${variantLabel}` : ''}
         </p>
+        <p className="text-xs text-amber-100/60 mb-2">推荐直接点击上方圆桌中的发光座位选择目标。</p>
         {helpText && <p className="text-xs text-amber-100/60 mb-3">{helpText}</p>}
         <div className="flex flex-col gap-2">
           {eligibleIds.map((id) => (
@@ -674,7 +855,7 @@ function PendingActionPanel({
   if (pa.step === 'shinobi_decide') {
     return (
       <div className="avalon-card p-4 border border-emerald-500/30 bg-emerald-950/15">
-        <p className="section-label mb-2 text-emerald-200">忍者偷窥 · 是否暗杀？</p>
+        <p className="section-label mb-2 text-emerald-200">上忍窥探 · 是否暗杀？</p>
         {peekedHouse && (
           <p className="text-sm text-emerald-100/90 mb-2">
             目标流派：<HouseCardLabel card={peekedHouse} />
@@ -955,36 +1136,42 @@ function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivate
       <div className="flex flex-col gap-1.5 text-[0.8125rem]">
         {reveals?.spyReveals?.map((r, i) => (
           <p key={`spy-${i}`} className="text-violet-100/90">
-            🕵️ {players[r.targetId]?.name ?? r.targetId} 的流派牌：<HouseCardLabel card={r.card} />
+            <span className="mr-1 rounded bg-sky-400/15 px-1.5 py-0.5 text-[0.625rem] text-sky-200">密探</span>
+            {players[r.targetId]?.name ?? r.targetId} 的流派牌：<HouseCardLabel card={r.card} />
           </p>
         ))}
         {reveals?.mysticReveals?.map((r, i) => (
           <p key={`my-${i}`} className="text-violet-100/90">
-            🔮 {players[r.targetId]?.name ?? r.targetId}：<HouseCardLabel card={r.card} />
-            ；忍者牌随机偷看：{r.ninjaCardKind ? ninjaKindLabel(r.ninjaCardKind) : '(无)'}
+            <span className="mr-1 rounded bg-violet-400/15 px-1.5 py-0.5 text-[0.625rem] text-violet-200">隐士</span>
+            {players[r.targetId]?.name ?? r.targetId}：<HouseCardLabel card={r.card} />
+            ；忍者牌随机查看：{r.ninjaCardKind ? ninjaKindLabel(r.ninjaCardKind) : '(无)'}
           </p>
         ))}
         {reveals?.shinobiPeek && (
           <p className="text-violet-100/90">
-            🥷 偷窥 {players[reveals.shinobiPeek.targetId]?.name ?? reveals.shinobiPeek.targetId} 的流派牌：
+            <span className="mr-1 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[0.625rem] text-emerald-200">上忍</span>
+            偷窥 {players[reveals.shinobiPeek.targetId]?.name ?? reveals.shinobiPeek.targetId} 的流派牌：
             <HouseCardLabel card={reveals.shinobiPeek.card} />
           </p>
         )}
         {reveals?.spiritMerchantViews?.map((r, i) => (
           <p key={`sm-${i}`} className="text-violet-100/90">
-            💱 灵商查看 {players[r.targetId]?.name ?? r.targetId}：
+            <span className="mr-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[0.625rem] text-amber-200">灵商</span>
+            查看 {players[r.targetId]?.name ?? r.targetId}：
             {r.card ? <HouseCardLabel card={r.card} /> : `荣誉标记 ${r.tokenValue ?? '?'} 分`}
           </p>
         ))}
         {reveals?.troublemakerPeek && (
           <p className="text-violet-100/90">
-            🎭 麻烦制造者偷看 {players[reveals.troublemakerPeek.targetId]?.name ?? reveals.troublemakerPeek.targetId}：
+            <span className="mr-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[0.625rem] text-amber-200">麻烦</span>
+            偷看 {players[reveals.troublemakerPeek.targetId]?.name ?? reveals.troublemakerPeek.targetId}：
             <HouseCardLabel card={reveals.troublemakerPeek.card} />
           </p>
         )}
         {reveals?.shapeshifterPeeks && (
           <p className="text-violet-100/90">
-            🌀 变形者查看 {players[reveals.shapeshifterPeeks.aId]?.name ?? reveals.shapeshifterPeeks.aId}：
+            <span className="mr-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[0.625rem] text-amber-200">变形</span>
+            查看 {players[reveals.shapeshifterPeeks.aId]?.name ?? reveals.shapeshifterPeeks.aId}：
             <HouseCardLabel card={reveals.shapeshifterPeeks.aCard} />
             <span className="mx-2 text-violet-300/70">/</span>
             {players[reveals.shapeshifterPeeks.bId]?.name ?? reveals.shapeshifterPeeks.bId}：
@@ -1024,45 +1211,19 @@ function PublicRevealsCard({ room }: { room: NinjaRoom }) {
   )
 }
 
-function PlayerStatusList({ room, playerId }: { room: NinjaRoom; playerId: string }) {
-  const ids = Object.keys(room.players ?? {}).sort()
-  return (
-    <div className="avalon-card p-4">
-      <p className="section-label mb-2">座位状态</p>
-      <div className="flex flex-col gap-1.5">
-        {ids.map((id) => {
-          const p = room.players?.[id]
-          if (!p) return null
-          const isMe = id === playerId
-          return (
-            <div
-              key={id}
-              className={`flex items-center justify-between text-sm ${
-                p.isAlive ? 'text-slate-200' : 'text-slate-500 line-through'
-              }`}
-            >
-              <span>
-                {p.name}
-                {isMe && <span className="text-[0.6875rem] text-slate-400 ml-1">(你)</span>}
-                {room.hostId === id && <span className="text-[0.6875rem] text-amber-300 ml-1">房主</span>}
-              </span>
-              <span className="text-[0.75rem] text-slate-400">{p.isAlive ? '存活' : '阵亡'}</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function MyHandCard({ hand }: { hand: NinjaCard[] }) {
   if (!hand.length) return null
   return (
-    <div className="avalon-card p-4">
-      <p className="section-label mb-2">你的手牌（{hand.length} 张）</p>
-      <div className="flex flex-col gap-2">
+    <div className="avalon-card p-4 border border-white/[0.08] bg-slate-950/50">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="section-label">你的手牌</p>
+        <span className="rounded-full bg-white/[0.05] px-2 py-1 text-[0.6875rem] text-slate-400">{hand.length} 张</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto px-0.5 py-2">
         {hand.map((c) => (
-          <NinjaCardView key={c.id} card={c} compact />
+          <div key={c.id} className="min-w-[204px] max-w-[224px]">
+            <NinjaCardView card={c} compact />
+          </div>
         ))}
       </div>
     </div>
@@ -1086,7 +1247,9 @@ function RevealCard({
 }) {
   const reveal = room.reveal!
   const players = room.players ?? {}
-  const playerIds = Object.keys(players).sort()
+  const playerIds = getOrderedPlayerIds(room)
+  const masterRevealedIds = reveal.masterRevealedIds ?? []
+  const mastermindBlocked = reveal.mastermindBlocked === true
   const me = players[playerId]
   const myAcked = me?.hasAcknowledgedReveal === true
   const ackedCount = playerIds.filter((id) => players[id]?.hasAcknowledgedReveal === true).length
@@ -1096,14 +1259,18 @@ function RevealCard({
   return (
     <div className="avalon-card p-5 border border-emerald-500/25 bg-emerald-950/10 animate-result-reveal">
       <p className="section-label mb-1 text-emerald-200">回合结算</p>
-      {reveal.mastermindBlocked ? (
+      {mastermindBlocked ? (
         <>
-          <p className="text-lg font-bold text-white">幕后黑手登场</p>
+          <p className="text-lg font-bold text-white">浪人首脑登场</p>
           <p className="text-xs text-amber-100/85 mt-1">
-            {reveal.masterRevealedIds.map((id) => players[id]?.name ?? id).join('、')}
-            {' '}独占本回合荣誉，其他流派玩家本回合不获得标记。
+            {masterRevealedIds.map((id) => players[id]?.name ?? id).join('、')}
+            {' '}阻断本回合流派奖励；浪人若存活仍获得 1 个标记。
           </p>
         </>
+      ) : masterRevealedIds.length > 0 ? (
+        <p className="text-lg font-bold text-white">
+          首脑令{reveal.winningHouse === 'crane' ? '鹤之流派' : '莲之流派'}获胜
+        </p>
       ) : (
         <p className="text-lg font-bold text-white">
           {reveal.winningHouse === 'crane' ? '鹤之流派获胜' :
@@ -1113,7 +1280,7 @@ function RevealCard({
         </p>
       )}
       {reveal.roninWasAlive && (
-        <p className="text-xs text-purple-200 mt-1">浪人存活，独得 1 个荣誉标记。</p>
+        <p className="text-xs text-purple-200 mt-1">浪人存活，额外获得 1 个荣誉标记。</p>
       )}
       <div className="divider my-3" />
       <div className="flex flex-col gap-1.5 text-[0.8125rem]">
@@ -1134,7 +1301,7 @@ function RevealCard({
               <span className="text-slate-300">
                 {p.isAlive && card ? <HouseCardLabel card={card} /> : <span className="text-slate-500">未揭示</span>}
                 {drew.length > 0 && (
-                  <span className="ml-2 text-[0.6875rem] text-amber-300">+{drew.length}🏆</span>
+                  <span className="ml-2 rounded-full bg-amber-300/15 px-1.5 py-0.5 text-[0.625rem] text-amber-200">+{drew.length} 标记</span>
                 )}
               </span>
             </div>
@@ -1185,7 +1352,7 @@ function GameEndCard({
   onExit: () => void
 }) {
   const players = room.players ?? {}
-  const ids = Object.keys(players).sort()
+  const ids = getOrderedPlayerIds(room)
   const winners = room.resultWinnerIds ?? []
   return (
     <div className="avalon-card p-5 border border-amber-500/30 bg-amber-950/10 animate-scale-bounce">

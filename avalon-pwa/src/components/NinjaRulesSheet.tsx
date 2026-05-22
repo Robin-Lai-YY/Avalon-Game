@@ -39,7 +39,7 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
           <section>
             <h3 className="text-sm font-semibold text-white mb-2">目标</h3>
             <p className="text-[0.8125rem] text-slate-300/90 leading-relaxed">
-              通过暗杀、欺诈与情报赢得荣誉标记，最先累计 10 分的玩家获胜（暗自计分，达成后翻开宣告）。
+              通过密探、骗术与暗杀赢得荣誉标记，最先累计 10 分的玩家获胜（暗自计分，达成后翻开宣告）。
             </p>
           </section>
 
@@ -56,11 +56,11 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
             <ol className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed list-decimal pl-4">
               <li>系统秘密发流派牌，所有人查看自己的身份。</li>
               <li>轮抽：发 3 张忍者牌，留 1 传 2；再从右邻收 2 张，留 1 弃 1，结束时手中 2 张。</li>
-              <li>夜晚 6 阶段（按顺序自动推进）：情报员 → 灵媒 → 欺诈师 → 盲眼刺客 → 忍者 → 幕后黑手。</li>
+              <li>夜晚 6 阶段（按顺序自动推进）：密探 → 隐士 → 骗徒 → 盲眼刺客 → 上忍 → 首脑。</li>
               <li>每个阶段，持有该类牌的玩家选择"打出 / 弃权"；同阶段多张按牌面优先级数字结算。</li>
-              <li>暗杀触发时进入反应窗口（8 秒）：被指定者可打出镜僧反弹，旁人可打出殉道者代死。</li>
+              <li>暗杀触发时进入反应决策：被指定者可选择打出还施僧反弹；若不反弹，持有殉道者的玩家按座位顺序依次选择是否代死。</li>
               <li>夜晚结束后所有存活者翻开流派牌：存活阶级最高（1 优先）的流派获胜；完美平局时所有活人各得 1 标记。</li>
-              <li>胜利方成员（无论生死）从牌堆抽 1 张荣誉标记；浪人活下来也独得 1 张。</li>
+              <li>胜利方成员（无论生死）从牌堆抽 1 张荣誉标记；浪人若存活，额外获得 1 张。</li>
             </ol>
           </section>
 
@@ -68,14 +68,14 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
             <h3 className="text-sm font-semibold text-white mb-2">卡组结构（共 33 张）</h3>
             <p className="text-[0.75rem] text-slate-400 mb-2">每位玩家每回合从 3 张里抽 2 张参战。</p>
             <div className="rounded-lg border border-white/[0.06] divide-y divide-white/[0.06] text-[0.8125rem] text-slate-300/90">
-              <div className="flex justify-between px-3 py-2"><span>情报员（Spy）</span><span className="text-slate-400">×4</span></div>
-              <div className="flex justify-between px-3 py-2"><span>灵媒（Mystic）</span><span className="text-slate-400">×3</span></div>
-              <div className="flex justify-between px-3 py-2"><span>把戏师（Trickster · 6 种各 1 张）</span><span className="text-slate-400">×6</span></div>
-              <div className="flex justify-between px-3 py-2"><span>盲眼刺客（Blind Assassin）</span><span className="text-slate-400">×5</span></div>
-              <div className="flex justify-between px-3 py-2"><span>忍者（Shinobi）</span><span className="text-slate-400">×5</span></div>
-              <div className="flex justify-between px-3 py-2"><span>镜僧（Mirror Monk）</span><span className="text-slate-400">×4</span></div>
-              <div className="flex justify-between px-3 py-2"><span>殉道者（Martyr）</span><span className="text-slate-400">×4</span></div>
-              <div className="flex justify-between px-3 py-2"><span>幕后黑手（Mastermind）</span><span className="text-slate-400">×2</span></div>
+              <div className="flex justify-between px-3 py-2"><span>密探（Spy）</span><span className="text-slate-400">×6</span></div>
+              <div className="flex justify-between px-3 py-2"><span>隐士（Mystic）</span><span className="text-slate-400">×6</span></div>
+              <div className="flex justify-between px-3 py-2"><span>骗徒（Trickster · 6 种各 1 张）</span><span className="text-slate-400">×6</span></div>
+              <div className="flex justify-between px-3 py-2"><span>盲眼刺客（Blind Assassin）</span><span className="text-slate-400">×6</span></div>
+              <div className="flex justify-between px-3 py-2"><span>上忍（Shinobi）</span><span className="text-slate-400">×6</span></div>
+              <div className="flex justify-between px-3 py-2"><span>还施僧（Mirror Monk）</span><span className="text-slate-400">×1</span></div>
+              <div className="flex justify-between px-3 py-2"><span>殉道者（Martyr）</span><span className="text-slate-400">×1</span></div>
+              <div className="flex justify-between px-3 py-2"><span>首脑（Mastermind）</span><span className="text-slate-400">×1</span></div>
             </div>
           </section>
 
@@ -83,52 +83,52 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
             <h3 className="text-sm font-semibold text-white mb-2">阶段牌效果</h3>
             <ul className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed">
               <li>
-                <span className="text-sky-300 font-semibold">情报员 1–4</span>
+                <span className="text-sky-300 font-semibold">密探 1–6</span>
                 <span className="block text-slate-300/85">
                   指定一名玩家，秘密查看其流派牌。同阶段多张按数字 1→4 顺序结算。
                 </span>
               </li>
               <li>
-                <span className="text-violet-300 font-semibold">灵媒 1–3</span>
+                <span className="text-violet-300 font-semibold">隐士 1–6</span>
                 <span className="block text-slate-300/85">
                   指定一名玩家，秘密查看其流派牌，并随机查看其手中 1 张忍者牌。
                 </span>
               </li>
               <li>
-                <span className="text-red-300 font-semibold">盲眼刺客 1–5</span>
+                <span className="text-red-300 font-semibold">盲眼刺客 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家直接暗杀。8 秒反应窗口内，目标可打镜僧反弹击杀，或他人可打殉道者代死。
+                  指定一名玩家直接暗杀。目标可选择打出还施僧反弹；若未反弹，持有殉道者的玩家按座位顺序依次选择是否代死。
                 </span>
               </li>
               <li>
-                <span className="text-emerald-300 font-semibold">忍者 1–5</span>
+                <span className="text-emerald-300 font-semibold">上忍 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家，秘密查看其流派牌后选择「暗杀」或「放过」；选择暗杀同样进入 8 秒反应窗口。
+                  指定一名玩家，秘密查看其流派牌后选择「暗杀」或「放过」；选择暗杀同样触发反应决策。
                 </span>
               </li>
               <li>
-                <span className="text-cyan-300 font-semibold">镜僧（反应牌）×4</span>
+                <span className="text-cyan-300 font-semibold">还施僧（反应牌）×1</span>
                 <span className="block text-slate-300/85">
                   当你被指定为暗杀目标时打出：暗杀反弹至攻击者，你不会死亡。审判 无法被反弹。
                 </span>
               </li>
               <li>
-                <span className="text-pink-300 font-semibold">殉道者（反应牌）×4</span>
+                <span className="text-pink-300 font-semibold">殉道者（反应牌）×1</span>
                 <span className="block text-slate-300/85">
                   当其他玩家被暗杀时打出：你代替其死亡，原目标存活。审判 无法被代死。
                 </span>
               </li>
               <li>
-                <span className="text-indigo-300 font-semibold">幕后黑手 1–2</span>
+                <span className="text-indigo-300 font-semibold">首脑 ×1</span>
                 <span className="block text-slate-300/85">
-                  夜晚结束时若你仍存活，公开此牌：本回合<strong className="text-amber-200">不再发放任何流派荣誉标记</strong>，仅你（与存活的浪人）各得 1 个标记。
+                  夜晚结束时若你仍存活，公开此牌：你的流派赢得本回合。若你是浪人，则不发放鹤/莲流派奖励，仅浪人因存活获得 1 个标记。
                 </span>
               </li>
             </ul>
           </section>
 
           <section>
-            <h3 className="text-sm font-semibold text-white mb-2">把戏师 6 张</h3>
+            <h3 className="text-sm font-semibold text-white mb-2">骗徒 6 张</h3>
             <ul className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed">
               <li>
                 <span className="text-amber-300 font-semibold">盗墓者（优先级 1）</span>
@@ -163,7 +163,7 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
               <li>
                 <span className="text-amber-300 font-semibold">审判（优先级 6）</span>
                 <span className="block text-slate-300/85">
-                  公开你自己的流派牌，然后击杀一名玩家。<strong className="text-amber-200">镜僧与殉道者无法响应</strong>，目标必定死亡。
+                  公开你自己的流派牌，然后击杀一名玩家。<strong className="text-amber-200">还施僧与殉道者无法响应</strong>，目标必定死亡。
                 </span>
               </li>
             </ul>

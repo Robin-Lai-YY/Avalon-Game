@@ -39,15 +39,26 @@ ninjaRooms
      │                                    NIGHT_BLIND_ASSASSIN | NIGHT_SHINOBI | NIGHT_MASTERMIND |
      │                                    REVEAL | GAME_END
      ├ round                  (number)
+     ├ targetPlayerCount      (number) – host-selected player count for the next game, 4-11
      ├ players                (object) – { [playerId]: NinjaPlayer }
+     ├ seatOrder              (array)  – clockwise seated player ids frozen at game start; drives draft passing and tie-breaks
+     ├ seatAssignments        (object) – { [playerId]: seatIndex } lobby seat positions (0-10)
      ├ houseCardAssignments   (object) – { [playerId]: HouseCard }
+     ├ publiclyRevealedHouseIds (array) – house cards publicly exposed this round
      ├ tokenBag               (array)  – remaining honor tokens (shuffled at game start)
      ├ ninjaDiscardPile       (array)  – cards discarded this game
      ├ currentNight           (object?) – per-phase resolution state with pendingAction / reactive window
+     ├ mastermindRevealedAliveIds (array) – alive Mastermind owners that block normal scoring
      ├ reveal                 (object?) – per-round reveal summary
      ├ resultWinnerIds        (array?)  – set on GAME_END
+     ├ serverTimeOffset       (number) – reserved for client clock offset / timed windows
      └ privateState           (object) – { [playerId]: { current: NinjaPrivateRoundState } }
 ```
 
-Per-player private info (spy/mystic/shinobi peeks) lives under `privateState/{playerId}/current`
+`seatAssignments` stores the lobby table position. Players may choose any empty seat before
+readying; once ready, their seat is locked. At game start, `seatOrder` is derived from
+`seatAssignments` and becomes the authoritative order for draft passing (“left neighbor”) and
+same-priority resolution ties.
+
+Per-player private info (spy/mystic/shinobi/trickster peeks) lives under `privateState/{playerId}/current`
 so each client can subscribe to only their own subtree.

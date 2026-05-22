@@ -5,7 +5,6 @@ import {
   buildNinjaDeck,
   DRAFT_DEAL_SIZE,
   HONOR_WIN_THRESHOLD,
-  REACTIVE_WINDOW_MS,
 } from '../data/ninjaCards'
 import { shuffle } from '../utils/shuffle'
 import { db } from './firebase'
@@ -58,9 +57,64 @@ function randomInt(maxExclusive: number): number {
   return bytes[0]! % maxExclusive
 }
 
-/** Build the seat ring (sorted player ids) used for draft passing direction. */
-function getSeatRing(players: Record<string, NinjaPlayer>) {
-  const ids = Object.keys(players).sort()
+const MAX_NINJA_SEATS = 11
+const MIN_NINJA_PLAYERS = 4
+
+function getSeatOrder(room: Pick<NinjaRoom, 'players'> & Partial<Pick<NinjaRoom, 'seatOrder'>>): string[] {
+  const players = room.players ?? {}
+  const existing = (room.seatOrder ?? []).filter((id) => !!players[id])
+  const missing = Object.keys(players)
+    .filter((id) => !existing.includes(id))
+    .sort()
+  return [...existing, ...missing]
+}
+
+function buildSeatOrderFromAssignments(
+  players: Record<string, NinjaPlayer>,
+  seatAssignments: Record<string, number> | undefined
+): string[] {
+  const assigned = Object.entries(seatAssignments ?? {})
+    .filter(([id, seat]) => !!players[id] && Number.isInteger(seat))
+    .sort((a, b) => a[1] - b[1])
+    .map(([id]) => id)
+  const missing = Object.keys(players)
+    .filter((id) => !assigned.includes(id))
+    .sort()
+  return [...assigned, ...missing]
+}
+
+function maxOccupiedSeatIndex(
+  players: Record<string, NinjaPlayer>,
+  seatAssignments: Record<string, number> | undefined
+): number {
+  const seats = Object.entries(seatAssignments ?? {})
+    .filter(([id]) => !!players[id])
+    .map(([, seat]) => seat)
+  return seats.length > 0 ? Math.max(...seats) : -1
+}
+
+function effectiveTargetPlayerCount(room: Pick<NinjaRoom, 'players'> & Partial<Pick<NinjaRoom, 'seatAssignments' | 'targetPlayerCount'>>): number {
+  const players = room.players ?? {}
+  return Math.min(
+    MAX_NINJA_SEATS,
+    Math.max(
+      MIN_NINJA_PLAYERS,
+      room.targetPlayerCount ?? MIN_NINJA_PLAYERS,
+      Object.keys(players).length,
+      maxOccupiedSeatIndex(players, room.seatAssignments) + 1
+    )
+  )
+}
+
+function getSeatedPlayerIds(room: Pick<NinjaRoom, 'players'> & Partial<Pick<NinjaRoom, 'seatOrder'>>): string[] {
+  const players = room.players ?? {}
+  if (!room.seatOrder) return Object.keys(players).sort()
+  return room.seatOrder.filter((id) => !!players[id])
+}
+
+/** Build the seat ring from the authoritative clockwise seat order. */
+function getSeatRing(room: Pick<NinjaRoom, 'players'> & Partial<Pick<NinjaRoom, 'seatOrder'>>) {
+  const ids = getSeatedPlayerIds(room)
   const leftOf: Record<string, string> = {}
   const rightOf: Record<string, string> = {}
   for (let i = 0; i < ids.length; i++) {
@@ -127,6 +181,7 @@ export async function createNinjaRoom(
     hostId: playerId,
     state: 'LOBBY',
     round: 0,
+    targetPlayerCount: MIN_NINJA_PLAYERS,
     players: {
       [playerId]: {
         name: trimmed,
@@ -136,6 +191,8 @@ export async function createNinjaRoom(
         ...DEFAULT_PLAYER_FIELDS,
       },
     },
+    seatOrder: [playerId],
+    seatAssignments: { [playerId]: 0 },
     houseCardAssignments: {},
     publiclyRevealedHouseIds: [],
     mastermindRevealedAliveIds: [],
@@ -173,11 +230,12 @@ export async function joinNinjaRoom(
   }
 
   const currentCount = Object.keys(players).length
-  if (currentCount >= 11) throw new Error('房间已满（最多 11 人）')
+  const targetCount = room.targetPlayerCount ?? MAX_NINJA_SEATS
+  if (currentCount >= targetCount) throw new Error(`房间已满（本局 ${targetCount} 人）`)
 
   const playerId = generatePlayerId()
   const reconnectToken = generateReconnectToken()
-  await set(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), {
+  await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), {
     name: trimmed,
     ready: false,
     reconnectToken,
@@ -244,8 +302,34 @@ export async function kickPlayerFromNinjaLobby(
   const room = snapshot.val() as NinjaRoom
   if (room.state !== 'LOBBY') throw new Error('只能在等待大厅踢人')
   if (room.hostId !== hostPlayerId) throw new Error('只有房主可以踢人')
-  if (!(room.players ?? {})[targetPlayerId]) throw new Error('该玩家不在房间中')
-  await remove(ref(db, `ninjaRooms/${roomId}/players/${targetPlayerId}`))
+  const players = room.players ?? {}
+  if (!players[targetPlayerId]) throw new Error('该玩家不在房间中')
+  const currentCount = Object.keys(players).length
+  const targetCount = room.targetPlayerCount ?? MAX_NINJA_SEATS
+  const remainingPlayers = Object.fromEntries(
+    Object.entries(players).filter(([id]) => id !== targetPlayerId)
+  ) as Record<string, NinjaPlayer>
+  let nextSeatAssignments = { ...(room.seatAssignments ?? {}) }
+  delete nextSeatAssignments[targetPlayerId]
+  let nextTargetPlayerCount = targetCount
+
+  // If the lobby was filled to the selected count, kicking someone should shrink
+  // the planned game size too. Preserve clockwise order by compacting seats.
+  if (currentCount >= targetCount) {
+    nextTargetPlayerCount = Math.max(MIN_NINJA_PLAYERS, currentCount - 1)
+    const compactOrder = buildSeatOrderFromAssignments(remainingPlayers, nextSeatAssignments)
+    nextSeatAssignments = {}
+    compactOrder.forEach((id, index) => {
+      nextSeatAssignments[id] = index
+    })
+  }
+
+  await update(roomRef, {
+    [`players/${targetPlayerId}`]: null,
+    targetPlayerCount: nextTargetPlayerCount,
+    seatAssignments: nextSeatAssignments,
+    seatOrder: buildSeatOrderFromAssignments(remainingPlayers, nextSeatAssignments),
+  })
 }
 
 export async function leaveNinjaLobby(roomId: string, playerId: string): Promise<void> {
@@ -256,16 +340,108 @@ export async function leaveNinjaLobby(roomId: string, playerId: string): Promise
   if (room.state !== 'LOBBY') return
   const players = room.players ?? {}
   if (!players[playerId]) return
-  const ids = Object.keys(players).sort()
+  const ids = getSeatOrder(room)
   if (ids.length === 1) {
     await remove(roomRef)
     return
   }
-  await remove(ref(db, `ninjaRooms/${roomId}/players/${playerId}`))
+  const nextSeatAssignments = { ...(room.seatAssignments ?? {}) }
+  delete nextSeatAssignments[playerId]
+  const nextSeatOrder = buildSeatOrderFromAssignments(
+    Object.fromEntries(Object.entries(players).filter(([id]) => id !== playerId)),
+    nextSeatAssignments
+  )
   if (room.hostId === playerId) {
     const nextHost = ids.find((id) => id !== playerId)
-    if (nextHost) await update(roomRef, { hostId: nextHost })
+    await update(roomRef, {
+      [`players/${playerId}`]: null,
+      [`seatAssignments/${playerId}`]: null,
+      seatOrder: nextSeatOrder,
+      ...(nextHost ? { hostId: nextHost } : {}),
+    })
+    return
   }
+  await update(roomRef, { [`players/${playerId}`]: null, [`seatAssignments/${playerId}`]: null, seatOrder: nextSeatOrder })
+}
+
+export async function sitNinjaSeat(roomId: string, playerId: string, seatIndex: number): Promise<void> {
+  if (!Number.isInteger(seatIndex) || seatIndex < 0 || seatIndex >= MAX_NINJA_SEATS) {
+    throw new Error('无效座位')
+  }
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    if (room.state !== 'LOBBY') return raw
+    const players = room.players ?? {}
+    const player = players[playerId]
+    if (!player) return raw
+    if (player.ready) return raw
+    const targetCount = effectiveTargetPlayerCount(room)
+    if (seatIndex >= targetCount) return raw
+
+    const seatAssignments = { ...(room.seatAssignments ?? {}) }
+    const occupied = Object.entries(seatAssignments).find(
+      ([id, seat]) => id !== playerId && seat === seatIndex && !!players[id]
+    )
+    if (occupied) return raw
+    seatAssignments[playerId] = seatIndex
+    const nextSeatOrder = buildSeatOrderFromAssignments(players, seatAssignments)
+    return {
+      ...room,
+      seatAssignments,
+      seatOrder: nextSeatOrder,
+      players: {
+        ...players,
+        [playerId]: { ...player, ready: false },
+      },
+    } as NinjaRoom
+  })
+}
+
+export async function setNinjaTargetPlayerCount(
+  roomId: string,
+  hostPlayerId: string,
+  targetPlayerCount: number
+): Promise<void> {
+  if (!Number.isInteger(targetPlayerCount) || targetPlayerCount < MIN_NINJA_PLAYERS || targetPlayerCount > MAX_NINJA_SEATS) {
+    throw new Error('忍者之夜支持 4-11 人')
+  }
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    if (room.state !== 'LOBBY') return raw
+    if (room.hostId !== hostPlayerId) return raw
+    const players = room.players ?? {}
+    if (Object.keys(players).length > targetPlayerCount) return raw
+    const maxOccupiedSeat = maxOccupiedSeatIndex(players, room.seatAssignments)
+    if (maxOccupiedSeat >= targetPlayerCount) return raw
+    return { ...room, targetPlayerCount } as NinjaRoom
+  })
+}
+
+export async function leaveNinjaSeat(roomId: string, playerId: string): Promise<void> {
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    if (room.state !== 'LOBBY') return raw
+    const players = room.players ?? {}
+    const player = players[playerId]
+    if (!player || player.ready) return raw
+    const seatAssignments = { ...(room.seatAssignments ?? {}) }
+    delete seatAssignments[playerId]
+    return {
+      ...room,
+      seatAssignments,
+      seatOrder: buildSeatOrderFromAssignments(players, seatAssignments),
+      players: {
+        ...players,
+        [playerId]: { ...player, ready: false },
+      },
+    } as NinjaRoom
+  })
 }
 
 export async function setNinjaPlayerReady(
@@ -279,6 +455,7 @@ export async function setNinjaPlayerReady(
   const room = snapshot.val() as NinjaRoom
   if (room.state !== 'LOBBY') throw new Error('游戏已开始')
   if (!room.players?.[playerId]) throw new Error('你不在房间中')
+  if (!getSeatedPlayerIds(room).includes(playerId)) throw new Error('请先选择座位')
   await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), { ready })
 }
 
@@ -290,14 +467,18 @@ export async function startNinjaGame(roomId: string, hostPlayerId: string): Prom
   if (room.state !== 'LOBBY') throw new Error('Game already started')
   if (room.hostId !== hostPlayerId) throw new Error('只有房主可以开始')
   const players = room.players ?? {}
-  const playerIds = Object.keys(players)
-  if (playerIds.length < 4 || playerIds.length > 11) throw new Error('忍者之夜支持 4-11 人')
+  const targetCount = effectiveTargetPlayerCount(room)
+  const playerIds = buildSeatOrderFromAssignments(players, room.seatAssignments)
+    .filter((id) => room.seatAssignments?.[id] !== undefined)
+  if (targetCount < MIN_NINJA_PLAYERS || targetCount > MAX_NINJA_SEATS) throw new Error('忍者之夜支持 4-11 人')
+  if (playerIds.length !== targetCount) throw new Error(`请等待 ${targetCount} 名玩家入座`)
+  if (playerIds.length !== Object.keys(players).length) throw new Error('请所有玩家先选择座位')
   if (!playerIds.every((id) => players[id]?.ready === true)) {
     throw new Error('请等待所有玩家准备')
   }
 
   const tokenBag = shuffle(buildHonorTokenBag())
-  await update(roomRef, { tokenBag, round: 0 })
+  await update(roomRef, { tokenBag, round: 0, targetPlayerCount: targetCount, seatOrder: playerIds })
   await startNinjaRound(roomId)
 }
 
@@ -316,8 +497,7 @@ export async function startNinjaRound(roomId: string): Promise<void> {
   const baseRoom = snapshot.val() as NinjaRoom
   if (baseRoom.state !== 'LOBBY' && baseRoom.state !== 'REVEAL') return
 
-  const players = baseRoom.players ?? {}
-  const seatIds = Object.keys(players).sort()
+  const seatIds = getSeatedPlayerIds(baseRoom)
   const playerCount = seatIds.length
   const houseDeck = shuffle(buildHouseDeck(playerCount)) as HouseCard[]
   const ninjaDeck = shuffle(buildNinjaDeck()) as NinjaCard[]
@@ -348,6 +528,7 @@ export async function startNinjaRound(roomId: string): Promise<void> {
       state: 'HOUSE_REVEAL',
       round: (room.round ?? 0) + 1,
       players: dealtPlayers,
+      seatOrder: seatIds,
       houseCardAssignments: houseAssignments,
       publiclyRevealedHouseIds: [],
       mastermindRevealedAliveIds: [],
@@ -414,7 +595,7 @@ export async function submitDraftPick(
       return { ...room, players } as NinjaRoom
     }
 
-    const ring = getSeatRing(players)
+    const ring = getSeatRing({ ...room, players })
     if (room.state === 'DRAFT_PICK_1') {
       const passingBuckets: Record<string, NinjaCard[]> = {}
       for (const id of ring.ids) passingBuckets[id] = []
@@ -569,7 +750,7 @@ export async function submitNightDeclaration(
 
     // Build the resolution queue from played cards, sorted by priority then seat order.
     const queue: { playerId: string; cardId: string; priority: number }[] = []
-    const seatOrder = Object.keys(players).sort()
+    const seatOrder = getSeatOrder({ ...room, players })
     for (const id of seatOrder) {
       const p = players[id]!
       for (const c of p.hand ?? []) {
@@ -746,10 +927,10 @@ function buildPendingAction(
 }
 
 /**
- * Mastermind: revealed at end of night. If the owner is still alive, mark
- * `mastermindBlocksTokens` so that the round-end scoring skips normal house
- * token distribution and only the Mastermind owner (and an alive Ronin) get
- * tokens. The actual token write happens in `finalizeRoundReveal`.
+ * Mastermind: revealed at end of night. If the owner is still alive, remember
+ * the owner so scoring can force that owner's house to win. If the owner is
+ * Ronin, normal house-token distribution is skipped and the Ronin survival
+ * bonus is awarded as usual.
  */
 function applySelfResolvingCard(
   room: NinjaRoom,
@@ -1320,7 +1501,7 @@ export async function submitShapeshifterDecision(
 }
 
 // ============================================================================
-// Reactive window (Mirror Monk / Martyr) handling
+// Reactive decisions (Mirror Monk / Martyr) handling
 // ============================================================================
 
 function openReactiveWindow(
@@ -1333,19 +1514,43 @@ function openReactiveWindow(
   if (!room.currentNight) return room
   const players = room.players ?? {}
   const eligibleMonkIds: string[] = []
-  const eligibleMartyrIds: string[] = []
   const victim = players[victimId]
   if (victim?.isAlive && (victim.hand ?? []).some((c) => c.kind === 'mirror_monk')) {
     eligibleMonkIds.push(victimId)
   }
-  for (const [pid, p] of Object.entries(players)) {
-    if (!p.isAlive) continue
-    if (pid === victimId) continue
-    if ((p.hand ?? []).some((c) => c.kind === 'martyr')) eligibleMartyrIds.push(pid)
+  const seatOrder = getSeatOrder(room)
+  const eligibleMartyrIds = seatOrder.filter((pid) => {
+    const p = players[pid]
+    if (!p?.isAlive) return false
+    if (pid === victimId) return false
+    return (p.hand ?? []).some((c) => c.kind === 'martyr')
+  })
+
+  if (eligibleMonkIds.length === 0 && eligibleMartyrIds.length === 0) {
+    return resolveReactiveWindow({
+      ...room,
+      currentNight: {
+        ...room.currentNight,
+        reactive: {
+          attackerId,
+          victimId,
+          source,
+          triggerCardId,
+          step: 'martyr',
+          currentResponderId: victimId,
+          eligibleMonkIds: [],
+          eligibleMartyrIds: [],
+          pendingMartyrIds: [],
+          responses: {},
+        },
+      },
+    } as NinjaRoom)
   }
 
-  // Stage the reactive window in state so resolveReactiveWindow can read it consistently.
-  const staged = {
+  const step = eligibleMonkIds.length > 0 ? 'monk' : 'martyr'
+  const currentResponderId = step === 'monk' ? victimId : eligibleMartyrIds[0]!
+
+  return {
     ...room,
     currentNight: {
       ...room.currentNight,
@@ -1354,20 +1559,15 @@ function openReactiveWindow(
         victimId,
         source,
         triggerCardId,
+        step,
+        currentResponderId,
         eligibleMonkIds,
         eligibleMartyrIds,
+        pendingMartyrIds: eligibleMartyrIds,
         responses: {},
-        expiresAt: Date.now() + REACTIVE_WINDOW_MS,
       },
     },
   } as NinjaRoom
-
-  // If nobody can respond, skip the wait and resolve immediately so we don't
-  // get visually "stuck" showing 0s while the timeout fires.
-  if (eligibleMonkIds.length === 0 && eligibleMartyrIds.length === 0) {
-    return resolveReactiveWindow(staged)
-  }
-  return staged
 }
 
 export async function submitReactiveResponse(
@@ -1384,46 +1584,86 @@ export async function submitReactiveResponse(
     if (room.currentNight!.pendingAction) return raw
     const monkIds = reactive.eligibleMonkIds ?? []
     const martyrIds = reactive.eligibleMartyrIds ?? []
-    const isEligible =
-      (response === 'monk' && monkIds.includes(playerId)) ||
-      (response === 'martyr' && martyrIds.includes(playerId)) ||
-      (response === 'pass' && (monkIds.includes(playerId) || martyrIds.includes(playerId)))
-    if (!isEligible) return raw
-    const responses = { ...(reactive.responses ?? {}), [playerId]: response }
-    const updatedReactive = { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, responses }
-    if (response === 'pass') {
-      // Wait for others or timeout. If everyone has passed, close the window.
-      const allEligible = new Set([...monkIds, ...martyrIds])
-      const allDecided = Array.from(allEligible).every((id) => responses[id] === 'pass')
-      if (!allDecided) {
+    const pendingMartyrIds = reactive.pendingMartyrIds ?? []
+    if (reactive.currentResponderId !== playerId) return raw
+
+    if (reactive.step === 'monk') {
+      const isEligible = monkIds.includes(playerId)
+      if (!isEligible) return raw
+      if (response !== 'monk' && response !== 'pass') return raw
+      const responses = { ...(reactive.responses ?? {}), [playerId]: response }
+      if (response === 'monk') {
+        return resolveReactiveWindow({
+          ...room,
+          currentNight: {
+            ...room.currentNight!,
+            reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds, responses },
+          },
+        } as NinjaRoom)
+      }
+      if (pendingMartyrIds.length > 0) {
         return {
           ...room,
-          currentNight: { ...room.currentNight!, reactive: updatedReactive },
+          currentNight: {
+            ...room.currentNight!,
+            reactive: {
+              ...reactive,
+              step: 'martyr',
+              currentResponderId: pendingMartyrIds[0]!,
+              eligibleMonkIds: monkIds,
+              eligibleMartyrIds: martyrIds,
+              pendingMartyrIds,
+              responses,
+            },
+          },
         } as NinjaRoom
       }
       return resolveReactiveWindow({
         ...room,
-        currentNight: { ...room.currentNight!, reactive: updatedReactive },
+        currentNight: {
+          ...room.currentNight!,
+          reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds: [], responses },
+        },
       } as NinjaRoom)
     }
-    // Monk or martyr played: close the window immediately and resolve.
+
+    const isEligible = martyrIds.includes(playerId)
+    if (!isEligible) return raw
+    if (response !== 'martyr' && response !== 'pass') return raw
+    const responses = { ...(reactive.responses ?? {}), [playerId]: response }
+    if (response === 'martyr') {
+      return resolveReactiveWindow({
+        ...room,
+        currentNight: {
+          ...room.currentNight!,
+          reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds, responses },
+        },
+      } as NinjaRoom)
+    }
+    const remaining = pendingMartyrIds.filter((id) => id !== playerId)
+    if (remaining.length > 0) {
+      return {
+        ...room,
+        currentNight: {
+          ...room.currentNight!,
+          reactive: {
+            ...reactive,
+            currentResponderId: remaining[0]!,
+            eligibleMonkIds: monkIds,
+            eligibleMartyrIds: martyrIds,
+            pendingMartyrIds: remaining,
+            responses,
+          },
+        },
+      } as NinjaRoom
+    }
     return resolveReactiveWindow({
       ...room,
-      currentNight: { ...room.currentNight!, reactive: updatedReactive },
+      currentNight: {
+        ...room.currentNight!,
+        reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds: [], responses },
+      },
     } as NinjaRoom)
-  })
-  await tryAdvanceResolution(roomId)
-}
-
-export async function expireReactiveWindow(roomId: string): Promise<void> {
-  const roomRef = ref(db, `ninjaRooms/${roomId}`)
-  await runTransaction(roomRef, (raw) => {
-    if (!raw) return raw
-    const room = raw as NinjaRoom
-    const reactive = room.currentNight?.reactive
-    if (!reactive) return raw
-    if (Date.now() < reactive.expiresAt) return raw
-    return resolveReactiveWindow(room)
   })
   await tryAdvanceResolution(roomId)
 }
@@ -1614,13 +1854,22 @@ export async function finalizeRoundReveal(roomId: string): Promise<void> {
         }
       }
     }
-    const perfectTie = winner === 'tie' && craneSurv.length === lotusSurv.length
+    const masterRevealedIds = room.mastermindRevealedAliveIds ?? []
+    const mastermindCard = masterRevealedIds.length > 0
+      ? houseAssignments[masterRevealedIds[0]!]
+      : null
+    const mastermindBlocked = mastermindCard?.side === 'ronin'
+    if (mastermindCard?.side === 'crane' || mastermindCard?.side === 'lotus') {
+      winner = mastermindCard.side
+    }
+    const perfectTie =
+      !masterRevealedIds.length &&
+      winner === 'tie' &&
+      craneSurv.length === lotusSurv.length
 
     // Distribute tokens
     const bag = [...(room.tokenBag ?? [])]
     const tokensDrawn: Record<string, HonorToken[]> = {}
-    const masterRevealedIds = room.mastermindRevealedAliveIds ?? []
-    const mastermindBlocked = masterRevealedIds.length > 0
 
     function drawOne(): HonorToken | null {
       return bag.length > 0 ? bag.shift()! : null
@@ -1637,12 +1886,9 @@ export async function finalizeRoundReveal(roomId: string): Promise<void> {
     }
 
     if (mastermindBlocked) {
-      // Mastermind blocks normal house-token distribution. Each alive Mastermind
-      // owner gets exactly 1 honor token. The Ronin survival bonus is independent
-      // (per FAQ: "He does, for surviving the round").
-      for (const id of masterRevealedIds) {
-        if (players[id]?.isAlive) awardOne(id)
-      }
+      // Ronin Mastermind has no Crane/Lotus house to make victorious, so normal
+      // house-token distribution is skipped. The Ronin survival bonus below
+      // still awards the Ronin exactly one token (per FAQ).
     } else if (perfectTie) {
       for (const id of aliveIds) awardOne(id)
     } else if (winner === 'crane' || winner === 'lotus') {
@@ -1739,11 +1985,13 @@ export async function restartNinjaToLobby(roomId: string, hostPlayerId: string):
   const room = snapshot.val() as NinjaRoom
   if (room.hostId !== hostPlayerId) throw new Error('只有房主可以再来一局')
 
-  const players = room.players ?? {}
-  const playerIds = Object.keys(players).sort()
+  const playerIds = getSeatOrder(room)
   const updates: Record<string, unknown> = {
     state: 'LOBBY',
     round: 0,
+    targetPlayerCount: room.targetPlayerCount ?? Math.max(MIN_NINJA_PLAYERS, getSeatedPlayerIds(room).length),
+    seatOrder: getSeatedPlayerIds(room),
+    seatAssignments: room.seatAssignments ?? {},
     houseCardAssignments: {},
     publiclyRevealedHouseIds: [],
     mastermindRevealedAliveIds: [],

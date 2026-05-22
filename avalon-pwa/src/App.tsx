@@ -162,6 +162,30 @@ export default function App() {
       return
     }
 
+    // Room-only invite links (e.g. QR codes) should open the matching game's
+    // join screen instead of falling through to saved-session restore / hub.
+    if (urlRoom && !urlToken) {
+      if (game === 'ninja') {
+        clearNinjaSession()
+        setNinjaNotice('已读取忍者之夜房间码，请输入名字加入。')
+        setView('ninjaHome')
+        setRestoring(false)
+        return
+      }
+      if (game === 'undercover') {
+        clearUndercoverSession()
+        setUndercoverNotice('已读取谁是卧底房间码，请输入名字加入。')
+        setView('undercoverHome')
+        setRestoring(false)
+        return
+      }
+      clearSession()
+      setHomeNotice('已读取阿瓦隆房间码，请输入名字加入。')
+      setView('home')
+      setRestoring(false)
+      return
+    }
+
     const avalonSession = loadSession()
     const undercoverSession = loadUndercoverSession()
     const ninjaSession = loadNinjaSession()
@@ -171,6 +195,13 @@ export default function App() {
     if (avalonSession && activeSessionCount === 1) {
       reconnectRoom(avalonSession.roomId, avalonSession.playerId)
         .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
+          if (state === 'GAME_END') {
+            clearSession()
+            clearUrlParams()
+            setHomeNotice('上次阿瓦隆对局已结束，请创建或加入新房间。')
+            setView('home')
+            return
+          }
           saveSession(rid, pid, host, avalonSession.reconnectToken)
           setRoomId(rid)
           setPlayerId(pid)
@@ -195,6 +226,13 @@ export default function App() {
     if (undercoverSession && activeSessionCount === 1) {
       reconnectUndercoverRoom(undercoverSession.roomId, undercoverSession.playerId)
         .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
+          if (state === 'GAME_END') {
+            clearUndercoverSession()
+            clearUrlParams()
+            setUndercoverNotice('上次谁是卧底对局已结束，请创建或加入新房间。')
+            setView('undercoverHome')
+            return
+          }
           saveUndercoverSession(rid, pid, host, undercoverSession.reconnectToken)
           setUndercoverRoomId(rid)
           setUndercoverPlayerId(pid)
@@ -216,6 +254,13 @@ export default function App() {
     if (ninjaSession && activeSessionCount === 1) {
       reconnectNinjaRoom(ninjaSession.roomId, ninjaSession.playerId)
         .then(({ roomId: rid, playerId: pid, isHost: host, state }) => {
+          if (state === 'GAME_END') {
+            clearNinjaSession()
+            clearUrlParams()
+            setNinjaNotice('上次忍者之夜对局已结束，请创建或加入新房间。')
+            setView('ninjaHome')
+            return
+          }
           saveNinjaSession(rid, pid, host, ninjaSession.reconnectToken)
           setNinjaRoomId(rid)
           setNinjaPlayerId(pid)

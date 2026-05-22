@@ -101,14 +101,18 @@ export type ReactiveWindow = {
   source: 'blind_assassin' | 'shinobi'
   /** Card id that triggered the kill, used to resume after the window resolves. */
   triggerCardId: string
+  /** Current decision step; no timer, one player decides at a time. */
+  step: 'monk' | 'martyr'
+  /** Player who must make the current reactive decision. */
+  currentResponderId: string
   /** Player ids who could play Mirror Monk (only victim if they hold one). */
   eligibleMonkIds: string[]
   /** Player ids who could play Martyr (any other alive player who holds one). */
   eligibleMartyrIds: string[]
+  /** Remaining Martyr responders in seat order. */
+  pendingMartyrIds: string[]
   /** Each eligible player's response. */
   responses: Record<string, ReactiveResponseChoice>
-  /** Epoch ms when the window auto-closes. */
-  expiresAt: number
 }
 
 export type PendingActionStep =
@@ -174,7 +178,13 @@ export type NinjaRoom = {
   hostId: string
   state: NinjaPhase
   round: number
+  /** Host-selected player count for the next game, 4-11. */
+  targetPlayerCount: number
   players: Record<string, NinjaPlayer>
+  /** Authoritative clockwise seating order. Used by draft passing and tie-breaks. */
+  seatOrder: string[]
+  /** Lobby seating map: player id -> seat index (0-10). Drives the round-table layout. */
+  seatAssignments: Record<string, number>
 
   /** Active house card per player this round. May be swapped by Shapeshifter. */
   houseCardAssignments: Record<string, HouseCard>
@@ -190,9 +200,8 @@ export type NinjaRoom = {
   currentNight: NightPhaseState | null
   /**
    * Player ids of Mastermind owners who revealed the card while still alive
-   * during the Mastermind step. When non-empty, round-end scoring skips normal
-   * house token distribution; each id receives 1 token (and an alive Ronin
-   * still gets their independent survival bonus).
+   * during the Mastermind step. If the owner is Crane/Lotus, that house wins
+   * the round; if the owner is Ronin, normal house-token distribution is skipped.
    */
   mastermindRevealedAliveIds: string[]
 
@@ -205,7 +214,7 @@ export type NinjaRoom = {
     masterRevealedIds: string[]
     roninWasAlive: boolean
     perfectTie: boolean
-    /** True when Mastermind blocked normal house-token scoring this round. */
+    /** True only when Ronin Mastermind blocked normal house-token scoring this round. */
     mastermindBlocked: boolean
   } | null
 
