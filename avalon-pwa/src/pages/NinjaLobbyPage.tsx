@@ -273,12 +273,12 @@ export function NinjaLobbyPage({
 
         {isHost && (
           <div className="rounded-[1.75rem] border border-white/[0.08] bg-slate-950/65 p-4 shadow-xl shadow-black/10 backdrop-blur">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-[0.6875rem] font-bold uppercase tracking-[0.22em] text-slate-400">Player Count</h2>
                 <p className="mt-1 text-xs text-slate-500">选择本局人数。不能小于当前已加入人数或已占用最高座位。</p>
               </div>
-              <span className="rounded-full border border-rose-200/20 bg-rose-400/10 px-3 py-1 text-sm font-black text-rose-100">
+              <span className="inline-flex min-h-[34px] shrink-0 items-center justify-center self-start rounded-xl border border-rose-200/20 bg-[#241522] px-3 py-1 text-sm font-black text-rose-100 sm:h-16 sm:w-16 sm:self-center sm:rounded-full sm:px-0 sm:py-0">
                 {targetPlayerCount} 人
               </span>
             </div>

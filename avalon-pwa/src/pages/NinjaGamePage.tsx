@@ -88,6 +88,59 @@ const PHASE_STEPS: { state: NinjaRoom['state']; label: string }[] = [
   { state: 'REVEAL', label: '揭示' },
 ]
 
+const PHASE_TRANSITION_COPY: Partial<Record<NinjaRoom['state'], { eyebrow: string; title: string; subtitle: string }>> = {
+  HOUSE_REVEAL: {
+    eyebrow: 'Round Start',
+    title: '查看流派牌',
+    subtitle: '确认你的流派与阶级，别让身份暴露。',
+  },
+  DRAFT_PICK_1: {
+    eyebrow: 'Draft 1',
+    title: '轮抽开始',
+    subtitle: '从 3 张忍者牌中保留 1 张，其余传给左邻。',
+  },
+  DRAFT_PICK_2: {
+    eyebrow: 'Draft 2',
+    title: '轮抽收束',
+    subtitle: '从收到的 2 张牌中保留 1 张，另一张进入弃牌堆。',
+  },
+  NIGHT_SPY: {
+    eyebrow: 'Night 1',
+    title: '进入密探阶段',
+    subtitle: '密探可以秘密查看一名玩家的流派牌。',
+  },
+  NIGHT_MYSTIC: {
+    eyebrow: 'Night 2',
+    title: '进入隐士阶段',
+    subtitle: '隐士可以查看流派牌，并随机查看一张忍者牌。',
+  },
+  NIGHT_TRICKSTER: {
+    eyebrow: 'Night 3',
+    title: '进入骗徒阶段',
+    subtitle: '骗徒将扰乱流派、标记与情报。',
+  },
+  NIGHT_BLIND_ASSASSIN: {
+    eyebrow: 'Night 4',
+    title: '进入盲眼刺客阶段',
+    subtitle: '无需确认身份，直接指定一名玩家暗杀。',
+  },
+  NIGHT_SHINOBI: {
+    eyebrow: 'Night 5',
+    title: '进入上忍阶段',
+    subtitle: '上忍先窥探流派，再决定是否出手。',
+  },
+  NIGHT_MASTERMIND: {
+    eyebrow: 'Final Night',
+    title: '进入首脑阶段',
+    subtitle: '若首脑存活，将改写本回合胜负。',
+  },
+  REVEAL: {
+    eyebrow: 'Dawn',
+    title: '进入揭示阶段',
+    subtitle: '存活者揭开流派，结算荣誉标记。',
+  },
+}
+
 function getOrderedPlayerIds(room: NinjaRoom): string[] {
   const players = room.players ?? {}
   const seated = (room.seatOrder ?? []).filter((id) => !!players[id])
@@ -123,7 +176,9 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   const [smGiveId, setSmGiveId] = useState<string | null>(null)
   const [smTakeId, setSmTakeId] = useState<string | null>(null)
   const [draftSelectedId, setDraftSelectedId] = useState<string | null>(null)
+  const [phaseTransition, setPhaseTransition] = useState<{ state: NinjaRoom['state']; nonce: number } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const previousStateRef = useRef<NinjaRoom['state'] | null>(null)
 
   useEffect(() => {
     const roomRef = ref(db, `ninjaRooms/${roomId}`)
@@ -145,6 +200,20 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
     setHouseRevealed(false)
     setDraftSelectedId(null)
   }, [room?.round])
+
+  useEffect(() => {
+    if (!room?.state) return
+    const previousState = previousStateRef.current
+    previousStateRef.current = room.state
+    if (!previousState || previousState === room.state) return
+    if (!PHASE_TRANSITION_COPY[room.state]) return
+    const nonce = Date.now()
+    setPhaseTransition({ state: room.state, nonce })
+    const timeout = window.setTimeout(() => {
+      setPhaseTransition((current) => (current?.nonce === nonce ? null : current))
+    }, 1700)
+    return () => window.clearTimeout(timeout)
+  }, [room?.state])
 
   useEffect(() => {
     setDraftSelectedId(null)
@@ -315,6 +384,7 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
     <div className="relative min-h-dvh overflow-x-hidden px-4 pb-8 pt-4 text-slate-100 animate-page-enter">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(225,29,72,0.16),transparent_32%),radial-gradient(circle_at_80%_18%,rgba(37,99,235,0.14),transparent_28%),linear-gradient(180deg,#020617,#070a13_46%,#020617)]" />
       <div className="pointer-events-none fixed inset-0 -z-10 opacity-[0.07] bg-[linear-gradient(rgba(255,255,255,0.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.7)_1px,transparent_1px)] bg-[size:44px_44px]" />
+      <NinjaPhaseTransitionOverlay transition={phaseTransition} />
       <div className="mx-auto flex max-w-5xl flex-col gap-4">
       <div className="relative z-50 flex items-center justify-between rounded-2xl border border-white/[0.08] bg-slate-950/70 px-3 py-2 shadow-xl shadow-black/20 backdrop-blur">
         <div>
@@ -626,6 +696,35 @@ function BattleStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-2.5 py-2">
       <p className="text-[0.5625rem] uppercase tracking-[0.18em] text-slate-500">{label}</p>
       <p className="mt-0.5 text-sm font-black text-slate-100">{value}</p>
+    </div>
+  )
+}
+
+function NinjaPhaseTransitionOverlay({
+  transition,
+}: {
+  transition: { state: NinjaRoom['state']; nonce: number } | null
+}) {
+  if (!transition) return null
+  const copy = PHASE_TRANSITION_COPY[transition.state]
+  if (!copy) return null
+
+  return (
+    <div
+      key={transition.nonce}
+      className="pointer-events-none fixed inset-0 z-[900] flex items-center justify-center bg-slate-950/45 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
+    >
+      <div className="w-full max-w-sm rounded-[2rem] border border-rose-200/15 bg-[#070b13]/95 p-6 text-center shadow-2xl shadow-black/50">
+        <p className="text-[0.625rem] font-black uppercase tracking-[0.32em] text-rose-200/70">
+          {copy.eyebrow}
+        </p>
+        <p className="mt-3 text-2xl font-black tracking-tight text-white">
+          {copy.title}
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-300">
+          {copy.subtitle}
+        </p>
+      </div>
     </div>
   )
 }

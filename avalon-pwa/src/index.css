@@ -217,6 +217,25 @@ a.tap-target {
   100% { background-position: 200% 0; }
 }
 
+@keyframes phase-overlay {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  76% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+}
+
 @keyframes pulse-ring {
   0% {
     transform: scale(1);
@@ -534,6 +553,10 @@ a.tap-target {
   background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.06) 50%, transparent 75%);
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
+}
+
+.animate-phase-overlay {
+  animation: phase-overlay 1.7s ease-out both;
 }
 
 .animate-pulse-ring {
