@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { onValue, ref } from 'firebase/database'
 import { db } from '../services/firebase'
 import {
@@ -709,10 +710,11 @@ function NinjaPhaseTransitionOverlay({
   const copy = PHASE_TRANSITION_COPY[transition.state]
   if (!copy) return null
 
-  return (
+  return createPortal(
     <div
       key={transition.nonce}
-      className="pointer-events-none fixed inset-0 z-[900] flex items-center justify-center bg-slate-950/45 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
+      className="pointer-events-none fixed left-0 top-0 z-[9999] flex w-screen items-center justify-center bg-slate-950/45 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
+      style={{ height: '100dvh' }}
     >
       <div className="w-full max-w-sm rounded-[2rem] border border-rose-200/15 bg-[#070b13]/95 p-6 text-center shadow-2xl shadow-black/50">
         <p className="text-[0.625rem] font-black uppercase tracking-[0.32em] text-rose-200/70">
@@ -725,7 +727,8 @@ function NinjaPhaseTransitionOverlay({
           {copy.subtitle}
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
