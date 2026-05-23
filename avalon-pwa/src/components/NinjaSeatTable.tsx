@@ -66,16 +66,17 @@ export function NinjaSeatTable({
   const viewerCanMove = mode === 'lobby' && !!viewer && !viewer.ready
   const size = tableSize(mode, mode === 'lobby' ? effectiveLobbySize : orderedIds.length)
   const diameter = seatDiameter(size)
-  const radius = mode === 'game' ? 41 : 40
+  const radius = mode === 'game' ? 37 : 40
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[430px] overflow-visible rounded-[2rem] border border-rose-300/10 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),rgba(15,23,42,0.38)_37%,rgba(2,6,23,0.92)_72%)] p-3 shadow-2xl shadow-rose-950/30">
+    <div className={`relative mx-auto w-full max-w-[430px] overflow-visible rounded-[2rem] border border-rose-300/10 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),rgba(15,23,42,0.38)_37%,rgba(2,6,23,0.92)_72%)] p-3 shadow-2xl shadow-rose-950/30 ${
+      mode === 'game' ? 'aspect-[1/1.08] pb-10' : 'aspect-square'
+    }`}>
       <div className="absolute inset-4 rounded-[1.75rem] border border-white/[0.05]" />
       <div className="absolute inset-[18%] rounded-full border border-rose-300/15 bg-[radial-gradient(circle_at_center,rgba(251,113,133,0.18),rgba(15,23,42,0.62)_60%,rgba(2,6,23,0.12))] shadow-[inset_0_0_42px_rgba(244,63,94,0.16)]" />
       <div className="absolute left-1/2 top-1/2 flex h-[34%] w-[34%] -translate-x-1/2 -translate-y-1/2 rotate-45 items-center justify-center rounded-3xl border border-amber-200/20 bg-slate-950/75 text-center shadow-2xl shadow-black/40 backdrop-blur">
         <div className="-rotate-45">
-          <p className="text-[0.625rem] uppercase tracking-[0.28em] text-rose-200/70">Shadow Table</p>
-          <p className="mt-1 text-base font-black tracking-[0.24em] text-amber-50">忍者之夜</p>
+          <p className="text-base font-black tracking-[0.24em] text-amber-50">忍者之夜</p>
           <p className="mt-1 text-[0.625rem] text-slate-400">
             {mode === 'lobby' ? '点击空位入座' : `第 ${room.round || 1} 回合`}
           </p>

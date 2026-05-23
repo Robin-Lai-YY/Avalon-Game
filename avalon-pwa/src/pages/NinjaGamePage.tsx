@@ -463,7 +463,6 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <p className="text-[0.6875rem] font-bold uppercase tracking-[0.24em] text-rose-200/75">Battle Table</p>
-              <h2 className="mt-1 text-xl font-black tracking-tight text-white">战局核心</h2>
             </div>
             <div className="rounded-2xl border border-amber-200/15 bg-amber-300/10 px-3 py-2 text-right">
               <p className="text-[0.625rem] uppercase tracking-[0.2em] text-amber-100/60">Action</p>
