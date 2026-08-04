@@ -55,6 +55,7 @@ export type NinjaPhase =
   | 'NIGHT_TRICKSTER'
   | 'NIGHT_BLIND_ASSASSIN'
   | 'NIGHT_SHINOBI'
+  /** @deprecated Kept for old rooms; no longer used in the night sequence. */
   | 'NIGHT_MASTERMIND'
   | 'REVEAL'
   | 'GAME_END'
@@ -80,7 +81,7 @@ export type NinjaPlayer = {
 
   /** Cards currently in the player's hand (face-down to others, public to self). */
   hand: NinjaCard[]
-  /** Pool of cards the player must pick from during draft phases. */
+  /** Pool of cards the player must pick from during the current draft phase. */
   draftHand: NinjaCard[]
   /** Card id chosen during the current draft phase but not yet committed. */
   draftPick: string | null
@@ -99,23 +100,20 @@ export type NinjaPlayer = {
 
 export type ReactiveResponseChoice = 'monk' | 'martyr' | 'pass'
 
+/** Victim-only reactive window (Mirror Monk / Martyr self-protect). */
 export type ReactiveWindow = {
   attackerId: string
   victimId: string
   source: 'blind_assassin' | 'shinobi'
-  /** Card id that triggered the kill, used to resume after the window resolves. */
   triggerCardId: string
-  /** Current decision step; no timer, one player decides at a time. */
   step: 'monk' | 'martyr'
-  /** Player who must make the current reactive decision. */
   currentResponderId: string
-  /** Player ids who could play Mirror Monk (only victim if they hold one). */
+  /** Victim id if they hold Mirror Monk; else empty. */
   eligibleMonkIds: string[]
-  /** Player ids who could play Martyr (any other alive player who holds one). */
+  /** Victim id if they hold Martyr; else empty. */
   eligibleMartyrIds: string[]
-  /** Remaining Martyr responders in seat order. */
+  /** @deprecated Unused; kept empty for RTDB shape stability. */
   pendingMartyrIds: string[]
-  /** Each eligible player's response. */
   responses: Record<string, ReactiveResponseChoice>
 }
 
@@ -126,55 +124,77 @@ export type PendingActionStep =
   | 'pick_token'
   | 'shinobi_decide'
   | 'gravedigger_pick'
+  | 'gravedigger_decide'
+  | 'spirit_merchant_view'
   | 'spirit_merchant_swap'
   | 'troublemaker_decide'
   | 'shapeshifter_pick_b'
   | 'shapeshifter_decide'
 
 export type PendingAction = {
-  /** Active player who needs to make the choice. */
   playerId: string
   cardId: string
   kind: NinjaCardKind
   variant: TricksterVariant | null
   step: PendingActionStep
-  /** For shinobi_decide: target's id and house — already peeked. */
   shinobiTargetId?: string | null
-  /** For pick_card_to_view (mystic): which target was chosen. */
   mysticTargetId?: string | null
-  /** For spirit_merchant_swap: target id and what was viewed. */
   spiritMerchantTargetId?: string | null
-  /** For gravedigger_pick: ids of the up-to-2 cards revealed from the discard pile. */
   gravediggerOptionIds?: string[] | null
-  /** For troublemaker_decide: target whose house has been privately viewed. */
+  /** After pick: the card taken from discard (before play-now / keep). */
+  gravediggerPickedId?: string | null
   troublemakerTargetId?: string | null
-  /** For shapeshifter_pick_b / shapeshifter_decide: first selected player. */
   shapeshifterAId?: string | null
-  /** For shapeshifter_decide: second selected player. */
   shapeshifterBId?: string | null
 }
 
 export type NightPhaseState = {
-  kind: 'spy' | 'mystic' | 'trickster' | 'blind_assassin' | 'shinobi' | 'mastermind'
-  /** Resolution queue derived from declarations after all players are declared. */
+  kind: 'spy' | 'mystic' | 'trickster' | 'blind_assassin' | 'shinobi'
   resolutionQueue: { playerId: string; cardId: string; priority: number }[]
-  /** Current index into resolutionQueue. -1 when queue is not built yet. */
   resolutionIndex: number
-  /** True once everyone with a card of this kind has declared. */
   declarationsLocked: boolean
+  /** Alive players who confirmed this phase (no matching cards → tap ack). */
+  phaseAckIds: string[]
   pendingAction: PendingAction | null
   reactive: ReactiveWindow | null
+}
+
+export type NinjaPublicNightEventKind =
+  | 'phase_plays'
+  | 'phase_skip'
+  | 'peek'
+  | 'swap_lock'
+  | 'public_reveal'
+  | 'kill'
+  | 'reactive'
+  | 'steal'
+  | 'gravedigger'
+  | 'mastermind'
+  | 'spirit_merchant'
+
+export type NinjaPublicNightEvent = {
+  id: string
+  at: number
+  round: number
+  kind: NinjaPublicNightEventKind
+  actorId?: string | null
+  cardLabel?: string | null
+  targetIds?: string[] | null
+  text: string
 }
 
 /** Information the engine writes per-player so that only that player's UI surfaces it. */
 export type NinjaPrivateRoundState = {
   spyReveals: { targetId: string; card: HouseCard }[]
-  mysticReveals: { targetId: string; card: HouseCard; ninjaCardKind: NinjaCardKind; ninjaCardVariant: TricksterVariant | null }[]
+  mysticReveals: {
+    targetId: string
+    card: HouseCard
+    ninjaCardKind: NinjaCardKind | null
+    ninjaCardVariant: TricksterVariant | null
+  }[]
   shinobiPeek: { targetId: string; card: HouseCard } | null
   spiritMerchantViews: { targetId: string; tokenValue: HonorTokenValue | null; card: HouseCard | null }[]
-  /** Set during troublemaker_decide; cleared once the player chooses reveal/hide. */
   troublemakerPeek: { targetId: string; card: HouseCard } | null
-  /** Set during shapeshifter_decide; cleared once the player chooses swap/keep. */
   shapeshifterPeeks: { aId: string; aCard: HouseCard; bId: string; bCard: HouseCard } | null
 }
 
@@ -182,48 +202,41 @@ export type NinjaRoom = {
   hostId: string
   state: NinjaPhase
   round: number
-  /** Host-selected player count for the next game, 4-11. */
   targetPlayerCount: number
   players: Record<string, NinjaPlayer>
-  /** Authoritative clockwise seating order. Used by draft passing and tie-breaks. */
   seatOrder: string[]
-  /** Lobby seating map: player id -> seat index (0-10). Drives the round-table layout. */
   seatAssignments: Record<string, number>
 
-  /** Active house card per player this round. May be swapped by Shapeshifter. */
   houseCardAssignments: Record<string, HouseCard>
   /**
-   * Player ids whose house card has been publicly revealed this round
-   * (Troublemaker reveal, Thief / Judgement self-reveal). Cleared each round.
+   * Snapshot of publicly revealed house cards this round (Troublemaker / Thief / Judgement).
+   * Cleared on Shapeshifter swap for involved seats so the new secret card is not shown as public.
    */
+  publiclyRevealedHouses: Record<string, HouseCard>
+  /** @deprecated Prefer publiclyRevealedHouses; kept synced for older clients. */
   publiclyRevealedHouseIds: string[]
-  /** Tokens still in the bag, with order locked at room creation/restart. */
   tokenBag: HonorToken[]
   ninjaDiscardPile: NinjaCard[]
-  /** Active night phase, null between phases. */
   currentNight: NightPhaseState | null
+  /** Chronological public night actions this round. */
+  publicNightLog: NinjaPublicNightEvent[]
   /**
-   * Player ids of Mastermind owners who revealed the card while still alive
-   * during the Mastermind step. If the owner is Crane/Lotus, that house wins
-   * the round; if the owner is Ronin, normal house-token distribution is skipped.
+   * Alive Mastermind owners auto-revealed at end of night.
+   * Crane/Lotus forces that house win; Ronin blocks normal house-token distribution.
    */
   mastermindRevealedAliveIds: string[]
 
-  /** Reveal phase summary. */
   reveal: {
     winningHouse: 'crane' | 'lotus' | 'tie' | 'none'
     aliveIds: string[]
-    /** Per-player tokens drawn this round (for animation/UI). */
     tokensDrawn: Record<string, HonorToken[]>
     masterRevealedIds: string[]
     roninWasAlive: boolean
     perfectTie: boolean
-    /** True only when Ronin Mastermind blocked normal house-token scoring this round. */
     mastermindBlocked: boolean
   } | null
 
   resultWinnerIds: string[] | null
-  /** Ms timestamp used by clients to lazily expire reactive windows. */
   serverTimeOffset: number
 }
 

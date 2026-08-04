@@ -7,17 +7,20 @@ import {
   acknowledgeNinjaReveal,
   finalizeRoundReveal,
   getEligibleThiefTargetIds,
+  ackNightPhase,
   primeNightPhaseIfNeeded,
   restartNinjaToLobby,
   startNextNinjaRound,
   submitDraftPick,
+  submitGravediggerDecision,
   submitGravediggerPick,
   submitNightDeclaration,
   submitReactiveResponse,
   submitShapeshifterB,
   submitShapeshifterDecision,
   submitShinobiDecision,
-  submitSpiritMerchantChoice,
+  submitSpiritMerchantSwap,
+  submitSpiritMerchantView,
   submitTarget,
   submitTroublemakerDecision,
   tryAdvanceResolution,
@@ -56,7 +59,7 @@ const PHASE_LABEL: Record<NinjaRoom['state'], string> = {
   NIGHT_TRICKSTER: '夜晚 3 · 骗徒',
   NIGHT_BLIND_ASSASSIN: '夜晚 4 · 盲眼刺客',
   NIGHT_SHINOBI: '夜晚 5 · 上忍',
-  NIGHT_MASTERMIND: '夜晚 6 · 首脑',
+  NIGHT_MASTERMIND: '首脑（自动）',
   REVEAL: '身份揭晓',
   GAME_END: '游戏结束',
 }
@@ -67,7 +70,6 @@ const NIGHT_KIND_BY_STATE: Record<string, NinjaCardKind> = {
   NIGHT_TRICKSTER: 'trickster',
   NIGHT_BLIND_ASSASSIN: 'blind_assassin',
   NIGHT_SHINOBI: 'shinobi',
-  NIGHT_MASTERMIND: 'mastermind',
 }
 
 const TRICKSTER_LABEL: Record<TricksterVariant, string> = {
@@ -88,7 +90,6 @@ const PHASE_STEPS: { state: NinjaRoom['state']; label: string }[] = [
   { state: 'NIGHT_TRICKSTER', label: '骗徒' },
   { state: 'NIGHT_BLIND_ASSASSIN', label: '刺客' },
   { state: 'NIGHT_SHINOBI', label: '上忍' },
-  { state: 'NIGHT_MASTERMIND', label: '首脑' },
   { state: 'REVEAL', label: '揭示' },
 ]
 
@@ -133,11 +134,6 @@ const PHASE_TRANSITION_COPY: Partial<Record<NinjaRoom['state'], { eyebrow: strin
     title: '进入上忍阶段',
     subtitle: '上忍先窥探流派，再决定是否出手。',
   },
-  NIGHT_MASTERMIND: {
-    eyebrow: 'Final Night',
-    title: '进入首脑阶段',
-    subtitle: '若首脑存活，将改写本回合胜负。',
-  },
   REVEAL: {
     eyebrow: 'Dawn',
     title: '进入揭示阶段',
@@ -160,6 +156,9 @@ function getTargetableIdsForPending(room: NinjaRoom, playerId: string, pa: Pendi
   const players = room.players ?? {}
   const aliveOthers = getOrderedPlayerIds(room).filter((id) => id !== playerId && players[id]?.isAlive)
   if (pa.kind === 'trickster' && pa.variant === 'shapeshifter') {
+    return getOrderedPlayerIds(room).filter((id) => players[id]?.isAlive)
+  }
+  if (pa.kind === 'shinobi') {
     return getOrderedPlayerIds(room).filter((id) => players[id]?.isAlive)
   }
   if (pa.kind === 'trickster' && pa.variant === 'thief') {
@@ -350,9 +349,18 @@ export function NinjaGamePage({
   async function handleGravedig(cardId: string | null) {
     void safeRun(() => submitGravediggerPick(roomId, playerId, cardId))
   }
-  async function handleSpiritMerchant() {
+  async function handleGravediggerDecision(playNow: boolean) {
+    void safeRun(() => submitGravediggerDecision(roomId, playerId, playNow))
+  }
+  async function handlePhaseAck() {
+    void safeRun(() => ackNightPhase(roomId, playerId))
+  }
+  async function handleSpiritMerchantView() {
+    void safeRun(() => submitSpiritMerchantView(roomId, playerId, smView))
+  }
+  async function handleSpiritMerchantSwap() {
     const swap = smGiveId && smTakeId ? { giveOwnTokenId: smGiveId, takeTargetTokenId: smTakeId } : null
-    void safeRun(() => submitSpiritMerchantChoice(roomId, playerId, { viewKind: smView, swap }))
+    void safeRun(() => submitSpiritMerchantSwap(roomId, playerId, swap))
   }
   async function handleTroublemakerDecision(reveal: boolean) {
     void safeRun(() => submitTroublemakerDecision(roomId, playerId, reveal))
@@ -395,7 +403,7 @@ export function NinjaGamePage({
   const phaseTitle = PHASE_LABEL[room.state] ?? room.state
   const orderedIds = getOrderedPlayerIds(room)
   const aliveCount = orderedIds.filter((id) => room.players?.[id]?.isAlive).length
-  const publicRevealCount = (room.publiclyRevealedHouseIds ?? []).length
+  const publicRevealCount = Object.keys(room.publiclyRevealedHouses ?? {}).length || (room.publiclyRevealedHouseIds ?? []).length
   const activeName = activePlayerId ? room.players?.[activePlayerId]?.name ?? '等待中' : '无'
 
   return (
@@ -571,6 +579,7 @@ export function NinjaGamePage({
           myUndeclared={myUndeclared}
           loading={loading}
           onChoice={handleNightChoice}
+          onAck={handlePhaseAck}
         />
       )}
 
@@ -588,7 +597,9 @@ export function NinjaGamePage({
           onTarget={handleTarget}
           onShinobiDecision={handleShinobiDecision}
           onGravedig={handleGravedig}
-          onSpiritMerchant={handleSpiritMerchant}
+          onGravediggerDecision={handleGravediggerDecision}
+          onSpiritMerchantView={handleSpiritMerchantView}
+          onSpiritMerchantSwap={handleSpiritMerchantSwap}
           onTroublemakerDecision={handleTroublemakerDecision}
           onShapeshifterB={handleShapeshifterB}
           onShapeshifterDecision={handleShapeshifterDecision}
@@ -612,6 +623,8 @@ export function NinjaGamePage({
           onPass={() => handleReactive('pass')}
         />
       )}
+
+      <NightActionLogCard room={room} />
 
       <PrivateRevealsCard privateState={privateState} room={room} />
 
@@ -645,20 +658,18 @@ function NinjaPhaseTracker({ room, phaseTitle }: { room: NinjaRoom; phaseTitle: 
   const currentIndex = PHASE_STEPS.findIndex((s) => s.state === room.state)
   const index = currentIndex === -1 ? 0 : currentIndex
   const currentNight = room.currentNight
-  const declared = currentNight && !currentNight.declarationsLocked
+  const readyText = currentNight && !currentNight.declarationsLocked
     ? (() => {
         const kind = currentNight.kind
         const players = room.players ?? {}
-        const eligible = getOrderedPlayerIds(room).filter((id) =>
-          players[id]?.isAlive && (players[id]?.hand ?? []).some((c) => c.kind === kind)
-        )
-        const done = eligible.filter((id) => {
+        const alive = getOrderedPlayerIds(room).filter((id) => players[id]?.isAlive)
+        const ready = alive.filter((id) => {
           const p = players[id]!
-          return (p.hand ?? [])
-            .filter((c) => c.kind === kind)
-            .every((c) => p.nightChoices?.[c.id] !== undefined)
+          const matching = (p.hand ?? []).filter((c) => c.kind === kind)
+          if (matching.length === 0) return (currentNight.phaseAckIds ?? []).includes(id)
+          return matching.every((c) => p.nightChoices?.[c.id] !== undefined)
         }).length
-        return `${done}/${eligible.length}`
+        return `${ready}/${alive.length}`
       })()
     : null
   const queue = currentNight?.resolutionQueue ?? []
@@ -673,9 +684,9 @@ function NinjaPhaseTracker({ room, phaseTitle }: { room: NinjaRoom; phaseTitle: 
           <p className="section-label mb-1">{phaseTitle}</p>
           <p className="text-xl font-bold text-indigo-200">第 {room.round || 1} 回合</p>
         </div>
-        {(declared || queueText) && (
+        {(readyText || queueText) && (
           <p className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[0.6875rem] text-slate-300">
-            {declared ? `声明 ${declared}` : `结算 ${queueText}`}
+            {readyText ? `确认 ${readyText}` : `结算 ${queueText}`}
           </p>
         )}
       </div>
@@ -756,6 +767,7 @@ function NightPhasePanel({
   myUndeclared,
   loading,
   onChoice,
+  onAck,
 }: {
   room: NinjaRoom
   playerId: string
@@ -764,21 +776,24 @@ function NightPhasePanel({
   myUndeclared: NinjaCard[]
   loading: boolean
   onChoice: (cardId: string, choice: 'play' | 'hold') => void
+  onAck: () => void
 }) {
   const me = room.players?.[playerId]
   const players = room.players ?? {}
-  const eligibleAlive = Object.entries(players)
-    .filter(([, p]) => p.isAlive && (p.hand ?? []).some((c) => c.kind === kind))
+  const aliveIds = Object.entries(players)
+    .filter(([, p]) => p.isAlive)
     .map(([id]) => id)
-  const declaredCount = eligibleAlive.filter((id) => {
+  const readyCount = aliveIds.filter((id) => {
     const p = players[id]!
-    const cards = (p.hand ?? []).filter((c) => c.kind === kind)
-    return cards.every((c) => p.nightChoices?.[c.id] !== undefined)
+    const matching = (p.hand ?? []).filter((c) => c.kind === kind)
+    if (matching.length === 0) return (room.currentNight?.phaseAckIds ?? []).includes(id)
+    return matching.every((c) => p.nightChoices?.[c.id] !== undefined)
   }).length
 
   const locked = room.currentNight?.declarationsLocked === true
   const queue = room.currentNight?.resolutionQueue ?? []
   const idx = room.currentNight?.resolutionIndex ?? 0
+  const iAcked = (room.currentNight?.phaseAckIds ?? []).includes(playerId)
 
   if (!me?.isAlive) {
     return (
@@ -793,14 +808,24 @@ function NightPhasePanel({
       <div className="flex items-baseline justify-between mb-2">
         <p className="section-label">{ninjaKindLabel(kind)} 阶段</p>
         {!locked ? (
-          <p className="text-xs text-slate-400">声明 {declaredCount}/{eligibleAlive.length}</p>
+          <p className="text-xs text-slate-400">确认 {readyCount}/{aliveIds.length}</p>
         ) : (
           <p className="text-xs text-slate-400">结算中 {Math.min(idx + 1, queue.length)}/{queue.length}</p>
         )}
       </div>
 
       {!locked && myCardsThisPhase.length === 0 && (
-        <p className="text-sm text-slate-400">你没有该阶段的牌，等待其他玩家声明…</p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-slate-400">你没有该阶段的牌，确认后等待其他人。</p>
+          <button
+            type="button"
+            disabled={loading || iAcked}
+            onClick={onAck}
+            className="min-h-[44px] rounded-xl btn-primary font-semibold disabled:opacity-50"
+          >
+            {iAcked ? '已确认' : '本阶段无行动'}
+          </button>
+        </div>
       )}
 
       {!locked && myCardsThisPhase.length > 0 && (
@@ -829,12 +854,12 @@ function NightPhasePanel({
                       choice === 'hold' ? 'bg-slate-500/30 text-slate-100 border border-slate-400/40' : 'bg-white/[0.04] text-slate-300 border border-white/[0.08]'
                     } disabled:opacity-50`}
                   >
-                    弃权
+                    本阶段不出
                   </button>
                 </div>
                 {choice && (
                   <p className="text-[0.6875rem] text-slate-400 mt-1">
-                    已选择：{choice === 'play' ? '打出' : '弃权（本回合不可再用）'}
+                    已选择：{choice === 'play' ? '打出' : '本阶段不出（本回合不可再用）'}
                   </p>
                 )}
               </div>
@@ -847,7 +872,7 @@ function NightPhasePanel({
       )}
 
       {locked && queue.length === 0 && (
-        <p className="text-sm text-slate-300">所有玩家弃权，跳过此阶段。</p>
+        <p className="text-sm text-slate-300">无人出牌，跳过此阶段。</p>
       )}
     </div>
   )
@@ -866,7 +891,9 @@ function PendingActionPanel({
   onTarget,
   onShinobiDecision,
   onGravedig,
-  onSpiritMerchant,
+  onGravediggerDecision,
+  onSpiritMerchantView,
+  onSpiritMerchantSwap,
   onTroublemakerDecision,
   onShapeshifterB,
   onShapeshifterDecision,
@@ -886,7 +913,9 @@ function PendingActionPanel({
   onTarget: (targetId: string) => void
   onShinobiDecision: (kill: boolean) => void
   onGravedig: (cardId: string | null) => void
-  onSpiritMerchant: () => void
+  onGravediggerDecision: (playNow: boolean) => void
+  onSpiritMerchantView: () => void
+  onSpiritMerchantSwap: () => void
   onTroublemakerDecision: (reveal: boolean) => void
   onShapeshifterB: (bId: string) => void
   onShapeshifterDecision: (swap: boolean) => void
@@ -931,6 +960,9 @@ function PendingActionPanel({
     if (pa.kind === 'trickster' && pa.variant === 'shapeshifter') {
       eligibleIds = aliveAny
       helpText = '选择第一名玩家（可包含你自己）'
+    } else if (pa.kind === 'shinobi') {
+      eligibleIds = aliveAny
+      helpText = '可选择自己：查看自己的流派后决定是否暗杀'
     } else if (pa.kind === 'trickster' && pa.variant === 'thief') {
       eligibleIds = getEligibleThiefTargetIds(room, playerId)
       helpText = eligibleIds.length === 0
@@ -974,15 +1006,17 @@ function PendingActionPanel({
     return (
       <div className="avalon-card p-4 border border-emerald-500/30 bg-emerald-950/15">
         <p className="section-label mb-2 text-emerald-200">上忍窥探 · 是否暗杀？</p>
-        {peekedHouse && (
+        {peekedHouse ? (
           <p className="text-sm text-emerald-100/90 mb-2">
             目标流派：<HouseCardLabel card={peekedHouse} />
           </p>
+        ) : (
+          <p className="text-xs text-slate-400 mb-2">读取目标流派中…</p>
         )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || !peekedHouse}
             onClick={() => onShinobiDecision(true)}
             className="min-h-[44px] rounded-xl bg-red-500/20 border border-red-400/40 text-red-100 font-semibold disabled:opacity-50"
           >
@@ -990,7 +1024,7 @@ function PendingActionPanel({
           </button>
           <button
             type="button"
-            disabled={loading}
+            disabled={loading || !peekedHouse}
             onClick={() => onShinobiDecision(false)}
             className="min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-200 font-semibold disabled:opacity-50"
           >
@@ -1009,13 +1043,23 @@ function PendingActionPanel({
       .filter((c): c is NonNullable<typeof c> => Boolean(c))
     return (
       <div className="avalon-card p-4 border border-amber-500/30 bg-amber-950/15">
-        <p className="section-label mb-2 text-amber-200">盗墓者 · 从弃牌堆随机翻 2 张</p>
+        <p className="section-label mb-2 text-amber-200">盗墓者 · 从弃牌堆翻牌</p>
         {options.length === 0 ? (
-          <p className="text-sm text-slate-300">弃牌堆为空，无牌可看。</p>
+          <>
+            <p className="text-sm text-slate-300 mb-2">弃牌堆为空，无牌可取。</p>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => onGravedig(null)}
+              className="w-full min-h-[44px] rounded-xl btn-primary font-semibold disabled:opacity-50"
+            >
+              结束
+            </button>
+          </>
         ) : (
           <>
             <p className="text-xs text-amber-100/75 mb-2">
-              系统从弃牌堆随机翻开下列 {options.length} 张牌，挑 1 张加入手牌（可选不取）。
+              必须从下列 {options.length} 张中挑 1 张；随后可选择立即打出或留下。
             </p>
             <div className="flex flex-col gap-2">
               {options.map((c) => (
@@ -1024,14 +1068,44 @@ function PendingActionPanel({
             </div>
           </>
         )}
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => onGravedig(null)}
-          className="w-full mt-2 min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-300 text-sm disabled:opacity-50"
-        >
-          一张都不取
-        </button>
+      </div>
+    )
+  }
+
+  if (pa.step === 'gravedigger_decide') {
+    const discard = room.ninjaDiscardPile ?? []
+    const picked = discard.find((c) => c.id === pa.gravediggerPickedId) ?? null
+    return (
+      <div className="avalon-card p-4 border border-amber-500/30 bg-amber-950/15">
+        <p className="section-label mb-2 text-amber-200">盗墓者 · 立即打出或留下</p>
+        {picked ? (
+          <div className="mb-3">
+            <NinjaCardView card={picked} compact />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-300 mb-3">已选中一张弃牌。</p>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onGravediggerDecision(true)}
+            className="min-h-[44px] rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-100 font-semibold disabled:opacity-50"
+          >
+            立即打出
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onGravediggerDecision(false)}
+            className="min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-200 font-semibold disabled:opacity-50"
+          >
+            留下
+          </button>
+        </div>
+        <p className="mt-2 text-[0.6875rem] text-slate-400">
+          若留下且该牌阶段已过（如密探/隐士），本回合将无法再出。
+        </p>
       </div>
     )
   }
@@ -1154,17 +1228,13 @@ function PendingActionPanel({
     )
   }
 
-  if (pa.step === 'spirit_merchant_swap') {
+  if (pa.step === 'spirit_merchant_view') {
     const targetId = pa.spiritMerchantTargetId
     const target = targetId ? room.players?.[targetId] : null
-    const myTokens = room.players?.[playerId]?.honorTokens ?? []
-    const targetTokens = target?.honorTokens ?? []
     return (
       <div className="avalon-card p-4 border border-amber-500/30 bg-amber-950/15">
-        <p className="section-label mb-2 text-amber-200">灵商 · 查看与交换</p>
-        {target && (
-          <p className="text-sm text-amber-100/85 mb-2">目标：{target.name}</p>
-        )}
+        <p className="section-label mb-2 text-amber-200">灵商 · 选择查看内容</p>
+        {target && <p className="text-sm text-amber-100/85 mb-2">目标：{target.name}</p>}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <button
             type="button"
@@ -1185,55 +1255,95 @@ function PendingActionPanel({
             查看一张荣誉标记
           </button>
         </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[0.6875rem] text-slate-400 mb-1">给出我的标记</p>
-            {myTokens.length === 0 && <p className="text-xs text-slate-500">无可用标记</p>}
-            {myTokens.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onSmGive(smGiveId === t.id ? null : t.id)}
-                className={`w-full min-h-[36px] rounded-lg text-xs my-1 ${
-                  smGiveId === t.id ? 'bg-amber-500/25 text-amber-100 border border-amber-400/40' : 'bg-white/[0.04] text-slate-300 border border-white/[0.08]'
-                }`}
-              >
-                {t.value} 分（隐藏 id）
-              </button>
-            ))}
-          </div>
-          <div>
-            <p className="text-[0.6875rem] text-slate-400 mb-1">取走对方标记</p>
-            {targetTokens.length === 0 && <p className="text-xs text-slate-500">对方无标记</p>}
-            {targetTokens.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onSmTake(smTakeId === t.id ? null : t.id)}
-                className={`w-full min-h-[36px] rounded-lg text-xs my-1 ${
-                  smTakeId === t.id ? 'bg-amber-500/25 text-amber-100 border border-amber-400/40' : 'bg-white/[0.04] text-slate-300 border border-white/[0.08]'
-                }`}
-              >
-                ???（盲选）
-              </button>
-            ))}
-          </div>
-        </div>
-
         <button
           type="button"
           disabled={loading}
-          onClick={onSpiritMerchant}
-          className="w-full mt-3 min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
+          onClick={onSpiritMerchantView}
+          className="w-full min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
         >
-          {smGiveId && smTakeId ? '查看并交换' : '只查看不交换'}
+          确认查看
+        </button>
+      </div>
+    )
+  }
+
+  if (pa.step === 'spirit_merchant_swap') {
+    const targetId = pa.spiritMerchantTargetId
+    const target = targetId ? room.players?.[targetId] : null
+    const myTokens = room.players?.[playerId]?.honorTokens ?? []
+    const targetTokens = target?.honorTokens ?? []
+    const canSwap = myTokens.length > 0 && targetTokens.length > 0
+    return (
+      <div className="avalon-card p-4 border border-amber-500/30 bg-amber-950/15">
+        <p className="section-label mb-2 text-amber-200">灵商 · 是否交换</p>
+        {target && <p className="text-sm text-amber-100/85 mb-2">目标：{target.name}</p>}
+        <p className="text-xs text-amber-100/70 mb-3">查看结果已写入「本回合见闻」。没有自己的标记时只能结束。</p>
+        {canSwap ? (
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div>
+              <p className="text-[0.6875rem] text-slate-400 mb-1">给出我的标记</p>
+              {myTokens.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onSmGive(smGiveId === t.id ? null : t.id)}
+                  className={`w-full min-h-[36px] rounded-lg text-xs my-1 ${
+                    smGiveId === t.id ? 'bg-amber-500/25 text-amber-100 border border-amber-400/40' : 'bg-white/[0.04] text-slate-300 border border-white/[0.08]'
+                  }`}
+                >
+                  {t.value} 分
+                </button>
+              ))}
+            </div>
+            <div>
+              <p className="text-[0.6875rem] text-slate-400 mb-1">取走对方标记</p>
+              {targetTokens.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => onSmTake(smTakeId === t.id ? null : t.id)}
+                  className={`w-full min-h-[36px] rounded-lg text-xs my-1 ${
+                    smTakeId === t.id ? 'bg-amber-500/25 text-amber-100 border border-amber-400/40' : 'bg-white/[0.04] text-slate-300 border border-white/[0.08]'
+                  }`}
+                >
+                  ???（盲选）
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 mb-3">无法交换（你或对方没有荣誉标记）。</p>
+        )}
+        <button
+          type="button"
+          disabled={loading || (canSwap && !(smGiveId && smTakeId) && Boolean(smGiveId || smTakeId))}
+          onClick={onSpiritMerchantSwap}
+          className="w-full min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
+        >
+          {smGiveId && smTakeId ? '确认交换' : '不交换，结束'}
         </button>
       </div>
     )
   }
 
   return null
+}
+
+function NightActionLogCard({ room }: { room: NinjaRoom }) {
+  const log = room.publicNightLog ?? []
+  if (log.length === 0) return null
+  return (
+    <div className="avalon-card p-4 border border-sky-500/20 bg-sky-950/10">
+      <p className="section-label mb-2 text-sky-200">本回合公开行动</p>
+      <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+        {log.map((e) => (
+          <p key={e.id} className="text-[0.8125rem] text-slate-200/90 leading-snug">
+            {e.text}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivateRoundState | null; room: NinjaRoom }) {
@@ -1306,7 +1416,8 @@ function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivate
  * publicly outed this round (Troublemaker reveal / Thief / Judgement self-reveal).
  */
 function PublicRevealsCard({ room }: { room: NinjaRoom }) {
-  const ids = room.publiclyRevealedHouseIds ?? []
+  const houses = room.publiclyRevealedHouses ?? {}
+  const ids = Object.keys(houses).length > 0 ? Object.keys(houses) : (room.publiclyRevealedHouseIds ?? [])
   if (ids.length === 0) return null
   const players = room.players ?? {}
   return (
@@ -1314,14 +1425,11 @@ function PublicRevealsCard({ room }: { room: NinjaRoom }) {
       <p className="section-label mb-2 text-amber-200">已公开的流派牌</p>
       <div className="flex flex-col gap-1.5 text-[0.8125rem]">
         {ids.map((id) => {
-          const card = room.houseCardAssignments?.[id]
+          const card = houses[id] ?? room.houseCardAssignments?.[id]
           return (
-            <div key={id} className="flex items-center justify-between">
-              <span className="text-slate-200">{players[id]?.name ?? id}</span>
-              <span className="text-amber-100">
-                {card ? <HouseCardLabel card={card} /> : '?'}
-              </span>
-            </div>
+            <p key={id} className="text-amber-100/90">
+              {players[id]?.name ?? id}：{card ? <HouseCardLabel card={card} /> : '（未知）'}
+            </p>
           )
         })}
       </div>

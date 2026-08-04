@@ -56,11 +56,12 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
             <ol className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed list-decimal pl-4">
               <li>系统秘密发流派牌，所有人查看自己的身份。</li>
               <li>轮抽：发 3 张忍者牌，留 1 传 2；再从右邻收 2 张，留 1 弃 1，结束时手中 2 张。</li>
-              <li>夜晚 6 阶段（按顺序自动推进）：密探 → 隐士 → 骗徒 → 盲眼刺客 → 上忍 → 首脑。</li>
-              <li>每个阶段，持有该类牌的玩家选择"打出 / 弃权"；同阶段多张按牌面优先级数字结算。</li>
-              <li>暗杀触发时进入反应决策：被指定者可选择打出还施僧反弹；若不反弹，持有殉道者的玩家按座位顺序依次选择是否代死。</li>
-              <li>夜晚结束后所有存活者翻开流派牌：存活阶级最高（1 优先）的流派获胜；完美平局时所有活人各得 1 标记。</li>
-              <li>胜利方成员（无论生死）从牌堆抽 1 张荣誉标记；浪人若存活，额外获得 1 张。</li>
+              <li>夜晚 5 阶段：密探 → 隐士 → 骗徒 → 盲眼刺客 → 上忍。首脑在夜末自动公开（不出牌阶段）。</li>
+              <li>每个阶段全员确认：持有该类牌的人选「打出 / 本阶段不出」；没有该类牌的人点「本阶段无行动」。锁定后公布打出的牌，再按优先级结算。</li>
+              <li>出牌与指定目标对全员可见；看到的流派/手牌内容仅行动者可见（可真可假地口头宣布）。</li>
+              <li>暗杀触发时：仅受害者可打出还施僧（反弹）或殉道者（保命并获得荣誉标记）。审判无法被响应。</li>
+              <li>夜晚结束后存活者翻开流派：最高阶级存活方获胜；完美平局时所有活人各得 1 标记。</li>
+              <li>胜利方成员（无论生死）抽 1 荣誉标记；浪人若存活额外 1 张。</li>
             </ol>
           </section>
 
@@ -85,85 +86,85 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
               <li>
                 <span className="text-sky-300 font-semibold">密探 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家，秘密查看其流派牌。同阶段多张按数字 1→4 顺序结算。
+                  指定一名玩家，秘密查看其流派牌。同阶段按数字 1→6 结算。
                 </span>
               </li>
               <li>
                 <span className="text-violet-300 font-semibold">隐士 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家，秘密查看其流派牌，并随机查看其手中 1 张忍者牌。
+                  指定一名玩家，秘密查看其流派牌，并随机查看其手中 1 张忍者牌（若已空手牌则仅看流派）。
                 </span>
               </li>
               <li>
                 <span className="text-red-300 font-semibold">盲眼刺客 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家直接暗杀。目标可选择打出还施僧反弹；若未反弹，持有殉道者的玩家按座位顺序依次选择是否代死。
+                  指定一名其他玩家直接暗杀。目标可打出还施僧反弹，或打出殉道者保命并获荣誉标记。
                 </span>
               </li>
               <li>
                 <span className="text-emerald-300 font-semibold">上忍 1–6</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家，秘密查看其流派牌后选择「暗杀」或「放过」；选择暗杀同样触发反应决策。
+                  指定一名玩家（可含自己），偷看流派后选择暗杀或放过；暗杀同样触发受害者反应。
                 </span>
               </li>
               <li>
                 <span className="text-cyan-300 font-semibold">还施僧（反应牌）×1</span>
                 <span className="block text-slate-300/85">
-                  当你被指定为暗杀目标时打出：暗杀反弹至攻击者，你不会死亡。审判 无法被反弹。
+                  当你被指定为暗杀目标时打出：反弹至攻击者。审判无法被反弹。
                 </span>
               </li>
               <li>
                 <span className="text-pink-300 font-semibold">殉道者（反应牌）×1</span>
                 <span className="block text-slate-300/85">
-                  当其他玩家被暗杀时打出：你代替其死亡，原目标存活。审判 无法被代死。
+                  当你被指定为暗杀目标时打出：你不会死亡，并获得 1 枚荣誉标记。审判无法响应。
                 </span>
               </li>
               <li>
                 <span className="text-indigo-300 font-semibold">首脑 ×1</span>
                 <span className="block text-slate-300/85">
-                  夜晚结束时若你仍存活，公开此牌：你的流派赢得本回合。若你是浪人，则不发放鹤/莲流派奖励，仅浪人因存活获得 1 个标记。
+                  夜末若你仍存活则自动公开：你的流派赢得本回合。若你是浪人，则不发放鹤/莲奖励，仅浪人因存活获得 1 个标记。
                 </span>
               </li>
             </ul>
           </section>
 
           <section>
-            <h3 className="text-sm font-semibold text-white mb-2">骗徒 6 张</h3>
+            <h3 className="text-sm font-semibold text-white mb-2">骗徒 6 张（英版优先级）</h3>
             <ul className="space-y-2 text-[0.8125rem] text-slate-300/90 leading-relaxed">
               <li>
-                <span className="text-amber-300 font-semibold">盗墓者（优先级 1）</span>
+                <span className="text-amber-300 font-semibold">变形者（优先级 1）</span>
                 <span className="block text-slate-300/85">
-                  系统从弃牌堆中随机翻开最多 2 张忍者牌给你看，挑 1 张加入手牌；可立即按其阶段打出，或保留至本回合后续阶段。
+                  选择任意两名玩家（可含自己），查看后可选秘密交换；被交换者之后不可再自由查看自己的流派牌。
                 </span>
               </li>
               <li>
-                <span className="text-amber-300 font-semibold">变形者（优先级 2）</span>
+                <span className="text-amber-300 font-semibold">盗墓者（优先级 2）</span>
                 <span className="block text-slate-300/85">
-                  选择任意两名玩家（可含你自己），查看二人的流派牌后选择是否秘密交换。一旦交换，被涉及的两人之后不可再自由查看自己的流派牌。
+                  从弃牌堆翻最多 2 张，必须取 1 张；可立即打出（可越阶段），或留下等到对应阶段。
                 </span>
               </li>
               <li>
                 <span className="text-amber-300 font-semibold">灵商（优先级 3）</span>
                 <span className="block text-slate-300/85">
-                  查看一名玩家的 1 个荣誉标记或流派牌；之后可选交换：将你任一标记给该玩家，并取走其任一标记（已看到的或未看到的均可）。
+                  先查看目标的流派或一张荣誉标记，再决定是否 1 换 1。没有自己的标记则只能看。
                 </span>
               </li>
               <li>
                 <span className="text-amber-300 font-semibold">盗贼（优先级 4）</span>
                 <span className="block text-slate-300/85">
-                  公开你自己的流派牌，从荣誉标记数<strong className="text-amber-200">严格大于</strong>你的玩家中选 1 人，随机偷其 1 个标记。若没有人比你多则该牌无效。
+                  公开自己的流派；从标记数严格更多的玩家中随机偷 1 张。无人可偷时仍公开身份。
                 </span>
               </li>
               <li>
                 <span className="text-amber-300 font-semibold">麻烦制造者（优先级 5）</span>
                 <span className="block text-slate-300/85">
-                  指定一名玩家，秘密查看其流派牌；之后选择是否当众揭示该流派牌。
+                  偷看目标流派后，选择是否当众揭示。
                 </span>
               </li>
               <li>
                 <span className="text-amber-300 font-semibold">审判（优先级 6）</span>
                 <span className="block text-slate-300/85">
-                  公开你自己的流派牌，然后击杀一名玩家。<strong className="text-amber-200">还施僧与殉道者无法响应</strong>，目标必定死亡。
+                  公开自己的流派并击杀一名玩家。<strong className="text-amber-200">还施僧与殉道者无法响应</strong>。
                 </span>
               </li>
             </ul>
@@ -172,7 +173,7 @@ export function NinjaRulesSheet({ open, onClose }: NinjaRulesSheetProps) {
           <section>
             <h3 className="text-sm font-semibold text-white mb-2">注意</h3>
             <p className="text-[0.8125rem] text-slate-300/90 leading-relaxed">
-              你可以在场上发言诈唬，但若选择不打出某阶段的牌，该牌即作废，本回合后续阶段不能再补打。死亡后无法再行动，但仍可继续发言。
+              鼓励发言与诈唬。选择「本阶段不出」的牌本回合后续不能再出。死亡后无法行动，但仍可发言。公开行动会出现在本回合日志中。
             </p>
           </section>
 

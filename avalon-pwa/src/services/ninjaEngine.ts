@@ -24,6 +24,13 @@ import type {
   ReactiveResponseChoice,
   TricksterVariant,
 } from '../types/ninja'
+import {
+  addPublicHouseReveal,
+  appendPublicNightEvent,
+  clearPublicHouseRevealFor,
+  pickRandomIds,
+  playerDisplayName,
+} from './ninjaNightLog'
 
 function findPlayerIdByUid(players: Record<string, NinjaPlayer>, uid: string): string | null {
   for (const [id, p] of Object.entries(players)) {
@@ -171,7 +178,6 @@ const NIGHT_PHASE_TO_KIND: Record<string, NinjaCardKind> = {
   NIGHT_TRICKSTER: 'trickster',
   NIGHT_BLIND_ASSASSIN: 'blind_assassin',
   NIGHT_SHINOBI: 'shinobi',
-  NIGHT_MASTERMIND: 'mastermind',
 }
 
 const NIGHT_PHASE_ORDER: NinjaRoom['state'][] = [
@@ -180,7 +186,6 @@ const NIGHT_PHASE_ORDER: NinjaRoom['state'][] = [
   'NIGHT_TRICKSTER',
   'NIGHT_BLIND_ASSASSIN',
   'NIGHT_SHINOBI',
-  'NIGHT_MASTERMIND',
 ]
 
 // ============================================================================
@@ -238,11 +243,13 @@ export async function createNinjaRoom(
     seatOrder: [playerId],
     seatAssignments: { [playerId]: 0 },
     houseCardAssignments: {},
+    publiclyRevealedHouses: {},
     publiclyRevealedHouseIds: [],
     mastermindRevealedAliveIds: [],
     tokenBag: [],
     ninjaDiscardPile: [],
     currentNight: null,
+    publicNightLog: [],
     reveal: null,
     resultWinnerIds: null,
     serverTimeOffset: 0,
@@ -729,10 +736,12 @@ export async function startNinjaRound(roomId: string): Promise<void> {
       players: dealtPlayers,
       seatOrder: seatIds,
       houseCardAssignments: houseAssignments,
+      publiclyRevealedHouses: {},
       publiclyRevealedHouseIds: [],
       mastermindRevealedAliveIds: [],
       ninjaDiscardPile: [],
       currentNight: null,
+      publicNightLog: [],
       reveal: null,
       resultWinnerIds: null,
     } as NinjaRoom
@@ -842,56 +851,120 @@ export async function submitDraftPick(
 // Night phase: declarations + resolution
 // ============================================================================
 
+function listAlivePlayerIds(room: NinjaRoom): string[] {
+  return getSeatOrder(room).filter((id) => room.players?.[id]?.isAlive)
+}
+
+function playerReadyForPhase(room: NinjaRoom, playerId: string, kind: NinjaCardKind): boolean {
+  const p = room.players?.[playerId]
+  if (!p?.isAlive) return true
+  const matching = (p.hand ?? []).filter((c) => c.kind === kind)
+  if (matching.length === 0) {
+    return (room.currentNight?.phaseAckIds ?? []).includes(playerId)
+  }
+  return matching.every((c) => p.nightChoices?.[c.id] !== undefined)
+}
+
+function allAliveReadyForPhase(room: NinjaRoom, kind: NinjaCardKind): boolean {
+  return listAlivePlayerIds(room).every((id) => playerReadyForPhase(room, id, kind))
+}
+
+function buildPhaseResolutionQueue(
+  room: NinjaRoom,
+  kind: NinjaCardKind
+): { playerId: string; cardId: string; priority: number }[] {
+  const queue: { playerId: string; cardId: string; priority: number }[] = []
+  const seatOrder = getSeatOrder(room)
+  for (const id of seatOrder) {
+    const p = room.players?.[id]
+    if (!p?.isAlive) continue
+    for (const c of p.hand ?? []) {
+      if (c.kind !== kind) continue
+      if (p.nightChoices?.[c.id] === 'play') {
+        queue.push({ playerId: id, cardId: c.id, priority: c.priority })
+      }
+    }
+  }
+  queue.sort((a, b) =>
+    a.priority !== b.priority
+      ? a.priority - b.priority
+      : seatOrder.indexOf(a.playerId) - seatOrder.indexOf(b.playerId)
+  )
+  return queue
+}
+
+function lockNightDeclarations(room: NinjaRoom, kind: NinjaCardKind): NinjaRoom {
+  if (!room.currentNight) return room
+  const queue = buildPhaseResolutionQueue(room, kind)
+  const kindLabel =
+    kind === 'spy'
+      ? '密探'
+      : kind === 'mystic'
+        ? '隐士'
+        : kind === 'trickster'
+          ? '骗徒'
+          : kind === 'blind_assassin'
+            ? '盲眼刺客'
+            : '上忍'
+  let next = room
+  if (queue.length === 0) {
+    next = appendPublicNightEvent(next, {
+      kind: 'phase_skip',
+      text: `${kindLabel}阶段：无人出牌`,
+    })
+  } else {
+    const names = queue
+      .map((q) => {
+        const card = room.players?.[q.playerId]?.hand?.find((c) => c.id === q.cardId)
+        return `${playerDisplayName(room, q.playerId)} 打出 ${card?.name ?? kindLabel}`
+      })
+      .join('；')
+    next = appendPublicNightEvent(next, {
+      kind: 'phase_plays',
+      text: `${kindLabel}阶段：${names}`,
+    })
+  }
+  return {
+    ...next,
+    currentNight: {
+      ...next.currentNight!,
+      resolutionQueue: queue,
+      resolutionIndex: queue.length === 0 ? queue.length : 0,
+      declarationsLocked: true,
+      phaseAckIds: listAlivePlayerIds(next),
+    },
+  } as NinjaRoom
+}
+
 /**
- * Set up `currentNight` for the current state. If no alive player has a card of
- * this kind, automatically advance to the next phase. Loops until it lands on a
- * phase with eligible players (or hits REVEAL).
+ * Set up `currentNight` for the current night state.
+ * Empty phases still wait for all-alive acknowledgement (no instant skip).
  */
 export async function primeNightPhaseIfNeeded(roomId: string): Promise<void> {
   const roomRef = ref(db, `ninjaRooms/${roomId}`)
-  for (let safety = 0; safety < 8; safety++) {
-    let advanced = false
-    await runTransaction(roomRef, (raw) => {
-      if (!raw) return raw
-      const room = raw as NinjaRoom
-      const kind = NIGHT_PHASE_TO_KIND[room.state]
-      if (!kind) return raw
-      if (!room.currentNight || room.currentNight.kind !== kind) {
-        return {
-          ...room,
-          currentNight: {
-            kind,
-            resolutionQueue: [],
-            resolutionIndex: -1,
-            declarationsLocked: false,
-            pendingAction: null,
-            reactive: null,
-          },
-        } as NinjaRoom
-      }
-      if (room.currentNight.declarationsLocked) return raw
-      const eligible = listEligiblePlayers(room, kind)
-      if (eligible.length > 0) return raw
-      advanced = true
-      return advanceFromCurrentPhase(room)
-    })
-    if (!advanced) break
-  }
-  // After priming, run reveal flow if we landed on REVEAL.
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    const kind = NIGHT_PHASE_TO_KIND[room.state]
+    if (!kind) return raw
+    if (room.currentNight && room.currentNight.kind === kind) return raw
+    return {
+      ...room,
+      currentNight: {
+        kind,
+        resolutionQueue: [],
+        resolutionIndex: -1,
+        declarationsLocked: false,
+        phaseAckIds: [],
+        pendingAction: null,
+        reactive: null,
+      },
+    } as NinjaRoom
+  })
   const post = (await get(roomRef)).val() as NinjaRoom | null
   if (post?.state === 'REVEAL' && !post.reveal) {
     await finalizeRoundReveal(roomId)
   }
-}
-
-function listEligiblePlayers(room: NinjaRoom, kind: NinjaCardKind): string[] {
-  const players = room.players ?? {}
-  const result: string[] = []
-  for (const [id, p] of Object.entries(players)) {
-    if (!p.isAlive) continue
-    if ((p.hand ?? []).some((c) => c.kind === kind)) result.push(id)
-  }
-  return result
 }
 
 function nextStateAfter(state: NinjaRoom['state']): NinjaRoom['state'] {
@@ -901,19 +974,80 @@ function nextStateAfter(state: NinjaRoom['state']): NinjaRoom['state'] {
   return NIGHT_PHASE_ORDER[idx + 1]!
 }
 
+/** Auto-reveal Mastermind cards held by living players at end of night. */
+function autoRevealMasterminds(room: NinjaRoom): NinjaRoom {
+  let next = room
+  const players = { ...next.players }
+  let discard = [...(next.ninjaDiscardPile ?? [])]
+  const revealed = [...(next.mastermindRevealedAliveIds ?? [])]
+  for (const id of listAlivePlayerIds(next)) {
+    const p = players[id]
+    if (!p) continue
+    const mm = (p.hand ?? []).find((c) => c.kind === 'mastermind')
+    if (!mm) continue
+    players[id] = { ...p, hand: (p.hand ?? []).filter((c) => c.id !== mm.id) }
+    discard.push(mm)
+    if (!revealed.includes(id)) revealed.push(id)
+    next = appendPublicNightEvent(
+      { ...next, players, ninjaDiscardPile: discard, mastermindRevealedAliveIds: revealed } as NinjaRoom,
+      {
+        kind: 'mastermind',
+        actorId: id,
+        cardLabel: '首脑',
+        text: `${playerDisplayName(next, id)} · 首脑 · 自动公开`,
+      }
+    )
+  }
+  return {
+    ...next,
+    players,
+    ninjaDiscardPile: discard,
+    mastermindRevealedAliveIds: revealed,
+  } as NinjaRoom
+}
+
 /** Used by transactions. Clears currentNight and advances state. Caller follows up to prime new phase. */
 function advanceFromCurrentPhase(room: NinjaRoom): NinjaRoom {
-  const next = nextStateAfter(room.state)
+  const nextState = nextStateAfter(room.state)
+  let next = room
+  if (nextState === 'REVEAL') {
+    next = autoRevealMasterminds(next)
+  }
   return {
-    ...room,
+    ...next,
     currentNight: null,
-    state: next,
+    state: nextState,
   } as NinjaRoom
+}
+
+/** Alive player with no matching phase cards confirms “本阶段无行动”. */
+export async function ackNightPhase(roomId: string, playerId: string): Promise<void> {
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    const kind = NIGHT_PHASE_TO_KIND[room.state]
+    if (!kind || !room.currentNight || room.currentNight.declarationsLocked) return raw
+    const me = room.players?.[playerId]
+    if (!me?.isAlive) return raw
+    const matching = (me.hand ?? []).filter((c) => c.kind === kind)
+    if (matching.length > 0) return raw
+    const phaseAckIds = [...new Set([...(room.currentNight.phaseAckIds ?? []), playerId])]
+    let next = {
+      ...room,
+      currentNight: { ...room.currentNight, phaseAckIds },
+    } as NinjaRoom
+    if (allAliveReadyForPhase(next, kind)) {
+      next = lockNightDeclarations(next, kind)
+    }
+    return next
+  })
+  await tryAdvanceResolution(roomId)
 }
 
 /**
  * Player declares whether to play or hold a specific card of the current phase's kind.
- * Once everyone eligible has declared all of their matching cards, the queue is built.
+ * Locks when every alive player is ready (holders declared; others acked).
  */
 export async function submitNightDeclaration(
   roomId: string,
@@ -936,45 +1070,11 @@ export async function submitNightDeclaration(
     const nightChoices = { ...(me.nightChoices ?? {}), [cardId]: choice }
     players[playerId] = { ...me, nightChoices }
 
-    // Are all eligible players done declaring all of their matching cards?
-    const eligible = listEligiblePlayers({ ...room, players }, kind)
-    const allDone = eligible.every((id) => {
-      const p = players[id]!
-      const myCards = (p.hand ?? []).filter((c) => c.kind === kind)
-      return myCards.every((c) => p.nightChoices?.[c.id] !== undefined)
-    })
-    if (!allDone) {
-      return { ...room, players } as NinjaRoom
+    let next = { ...room, players } as NinjaRoom
+    if (allAliveReadyForPhase(next, kind)) {
+      next = lockNightDeclarations(next, kind)
     }
-
-    // Build the resolution queue from played cards, sorted by priority then seat order.
-    const queue: { playerId: string; cardId: string; priority: number }[] = []
-    const seatOrder = getSeatOrder({ ...room, players })
-    for (const id of seatOrder) {
-      const p = players[id]!
-      for (const c of p.hand ?? []) {
-        if (c.kind !== kind) continue
-        if (p.nightChoices?.[c.id] === 'play') {
-          queue.push({ playerId: id, cardId: c.id, priority: c.priority })
-        }
-      }
-    }
-    queue.sort((a, b) =>
-      a.priority !== b.priority
-        ? a.priority - b.priority
-        : seatOrder.indexOf(a.playerId) - seatOrder.indexOf(b.playerId)
-    )
-
-    return {
-      ...room,
-      players,
-      currentNight: {
-        ...room.currentNight,
-        resolutionQueue: queue,
-        resolutionIndex: queue.length === 0 ? queue.length : 0,
-        declarationsLocked: true,
-      },
-    } as NinjaRoom
+    return next
   })
 
   await tryAdvanceResolution(roomId)
@@ -1073,6 +1173,7 @@ function makePendingAction(args: {
     mysticTargetId: null,
     spiritMerchantTargetId: null,
     gravediggerOptionIds: null,
+    gravediggerPickedId: null,
     troublemakerTargetId: null,
     shapeshifterAId: null,
     shapeshifterBId: null,
@@ -1100,15 +1201,13 @@ function buildPendingAction(
   if (card.kind === 'blind_assassin') return makePendingAction({ ownerId, card, step: 'pick_target' })
   if (card.kind === 'shinobi') return makePendingAction({ ownerId, card, step: 'pick_target' })
   if (card.kind === 'trickster') {
-    // Defensive: an unknown variant (e.g. legacy data from a pre-rename round)
-    // should never produce a pending — the card just gets silently discarded
-    // by applySelfResolvingCard so play doesn't get stuck on a click that
-    // has no engine handler.
     if (!card.variant || !KNOWN_TRICKSTER_VARIANTS.includes(card.variant)) return null
 
     if (card.variant === 'gravedigger') {
-      const shuffled = [...discardPile].sort(() => Math.random() - 0.5)
-      const optionIds = shuffled.slice(0, 2).map((c) => c.id)
+      const optionIds = pickRandomIds(
+        discardPile.map((c) => c.id),
+        2
+      )
       return makePendingAction({
         ownerId,
         card,
@@ -1116,6 +1215,7 @@ function buildPendingAction(
         overrides: { gravediggerOptionIds: optionIds },
       })
     }
+    // Thief with no eligible targets: still self-reveal via applySelfResolving path (null pending).
     if (card.variant === 'thief' && room) {
       const eligible = getEligibleThiefTargetIds(room, ownerId)
       if (eligible.length === 0) return null
@@ -1126,29 +1226,41 @@ function buildPendingAction(
 }
 
 /**
- * Mastermind: revealed at end of night. If the owner is still alive, remember
- * the owner so scoring can force that owner's house to win. If the owner is
- * Ronin, normal house-token distribution is skipped and the Ronin survival
- * bonus is awarded as usual.
+ * Mastermind no longer resolves via declaration queue.
+ * Thief with no steal targets still publicly reveals house.
  */
 function applySelfResolvingCard(
   room: NinjaRoom,
   ownerId: string,
   card: NinjaCard
 ): NinjaRoom {
-  if (card.kind !== 'mastermind') return discardPlayedCard(advanceQueueIndex(room), ownerId, card.id)
-  const owner = room.players?.[ownerId]
-  const aliveIds = room.mastermindRevealedAliveIds ?? []
-  const nextAliveIds =
-    owner && owner.isAlive && !aliveIds.includes(ownerId) ? [...aliveIds, ownerId] : aliveIds
-  return discardPlayedCard(
-    advanceQueueIndex({
-      ...room,
-      mastermindRevealedAliveIds: nextAliveIds,
-    } as NinjaRoom),
-    ownerId,
-    card.id
-  )
+  if (card.kind === 'trickster' && card.variant === 'thief') {
+    let next = addPublicHouseReveal(clearPending(room), ownerId)
+    next = appendPublicNightEvent(next, {
+      kind: 'public_reveal',
+      actorId: ownerId,
+      cardLabel: '盗贼',
+      text: `${playerDisplayName(next, ownerId)} · 盗贼 · 公开身份，无人可偷`,
+    })
+    return discardPlayedCard(advanceQueueIndex(next), ownerId, card.id)
+  }
+  if (card.kind === 'mastermind') {
+    const owner = room.players?.[ownerId]
+    const revealed = [...(room.mastermindRevealedAliveIds ?? [])]
+    if (owner?.isAlive && !revealed.includes(ownerId)) revealed.push(ownerId)
+    let next = {
+      ...clearPending(room),
+      mastermindRevealedAliveIds: revealed,
+    } as NinjaRoom
+    next = appendPublicNightEvent(next, {
+      kind: 'mastermind',
+      actorId: ownerId,
+      cardLabel: '首脑',
+      text: `${playerDisplayName(next, ownerId)} · 首脑 · 公开`,
+    })
+    return discardPlayedCard(advanceQueueIndex(next), ownerId, card.id)
+  }
+  return discardPlayedCard(advanceQueueIndex(room), ownerId, card.id)
 }
 
 /** Move the played card from the player's hand to the discard pile. */
@@ -1190,9 +1302,9 @@ export async function submitTarget(
     if (!owner) return raw
     const card = (owner.hand ?? []).find((c) => c.id === pa.cardId)
     if (!card) return raw
-    // Shapeshifter is allowed to pick any player including self (per official rules);
-    // every other targeted card requires a different player.
-    const allowSelf = card.kind === 'trickster' && card.variant === 'shapeshifter'
+    // Shapeshifter may pick self; Shinobi may pick self; Blind Assassin cannot.
+    const allowSelf =
+      (card.kind === 'trickster' && card.variant === 'shapeshifter') || card.kind === 'shinobi'
     if (!allowSelf && targetId === playerId) return raw
 
     if (pa.kind === 'spy') {
@@ -1202,7 +1314,15 @@ export async function submitTarget(
         ownerId: playerId,
         patch: { addSpy: { targetId, card: houseCard } },
       }
-      return discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      let next = discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      next = appendPublicNightEvent(next, {
+        kind: 'peek',
+        actorId: playerId,
+        cardLabel: card.name,
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · ${card.name} · 查看了 ${playerDisplayName(next, targetId)}`,
+      })
+      return next
     }
 
     if (pa.kind === 'mystic') {
@@ -1222,18 +1342,27 @@ export async function submitTarget(
           },
         },
       }
-      return discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      let next = discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      next = appendPublicNightEvent(next, {
+        kind: 'peek',
+        actorId: playerId,
+        cardLabel: card.name,
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · ${card.name} · 查看了 ${playerDisplayName(next, targetId)}`,
+      })
+      return next
     }
 
     if (pa.kind === 'blind_assassin') {
-      // Open a reactive window: kill resolves only after window closes.
-      return openReactiveWindow(
-        clearPending(room),
-        playerId,
-        targetId,
-        'blind_assassin',
-        pa.cardId
-      )
+      let next = clearPending(room)
+      next = appendPublicNightEvent(next, {
+        kind: 'kill',
+        actorId: playerId,
+        cardLabel: card.name,
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · ${card.name} · 暗杀 ${playerDisplayName(next, targetId)}`,
+      })
+      return openReactiveWindow(next, playerId, targetId, 'blind_assassin', pa.cardId)
     }
 
     if (pa.kind === 'shinobi') {
@@ -1243,7 +1372,7 @@ export async function submitTarget(
         ownerId: playerId,
         patch: { setShinobiPeek: { targetId, card: houseCard } },
       }
-      return {
+      let next = {
         ...room,
         currentNight: {
           ...room.currentNight,
@@ -1255,6 +1384,16 @@ export async function submitTarget(
           }),
         },
       } as NinjaRoom
+      next = appendPublicNightEvent(next, {
+        kind: 'peek',
+        actorId: playerId,
+        cardLabel: card.name,
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · ${card.name} · 查看了 ${
+          targetId === playerId ? '自己' : playerDisplayName(next, targetId)
+        }`,
+      })
+      return next
     }
 
     if (pa.kind === 'trickster') {
@@ -1296,25 +1435,23 @@ export async function submitShinobiDecision(
     if (!kill) {
       return discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
     }
-    return openReactiveWindow(
-      clearPending(room),
-      playerId,
-      targetId,
-      'shinobi',
-      pa.cardId
-    )
+    let next = clearPending(room)
+    next = appendPublicNightEvent(next, {
+      kind: 'kill',
+      actorId: playerId,
+      cardLabel: '上忍',
+      targetIds: [targetId],
+      text: `${playerDisplayName(next, playerId)} · 上忍 · 暗杀 ${
+        targetId === playerId ? '自己' : playerDisplayName(next, targetId)
+      }`,
+    })
+    return openReactiveWindow(next, playerId, targetId, 'shinobi', pa.cardId)
   })
   await tryAdvanceResolution(roomId)
 }
 
-// ============================================================================
-// Trickster variants
-// ============================================================================
-
 function addPubliclyRevealed(room: NinjaRoom, playerId: string): NinjaRoom {
-  const cur = room.publiclyRevealedHouseIds ?? []
-  if (cur.includes(playerId)) return room
-  return { ...room, publiclyRevealedHouseIds: [...cur, playerId] } as NinjaRoom
+  return addPublicHouseReveal(room, playerId)
 }
 
 /**
@@ -1355,14 +1492,12 @@ function applyTricksterTargetSelection(
   }
 
   if (variant === 'thief') {
-    // Reveal own house publicly.
     const owner = room.players?.[ownerId]
     if (!owner) return room
     const myTokenCount = (owner.honorTokens ?? []).length
     const target = room.players?.[targetId]
     if (!target) return room
     const targetTokens = target.honorTokens ?? []
-    // Engine-side validation: target must have strictly more tokens than thief.
     if (targetTokens.length <= myTokenCount) return room
 
     const stolen = targetTokens[randomInt(targetTokens.length)]!
@@ -1375,15 +1510,19 @@ function applyTricksterTargetSelection(
       ...owner,
       honorTokens: [...(owner.honorTokens ?? []), stolen],
     }
-    return discardPlayedCard(
-      advanceQueueIndex(addPubliclyRevealed({ ...clearPending(room), players } as NinjaRoom, ownerId)),
-      ownerId,
-      card.id
-    )
+    let next = addPubliclyRevealed({ ...clearPending(room), players } as NinjaRoom, ownerId)
+    next = appendPublicNightEvent(next, {
+      kind: 'steal',
+      actorId: ownerId,
+      cardLabel: '盗贼',
+      targetIds: [targetId],
+      text: `${playerDisplayName(next, ownerId)} · 盗贼 · 公开身份并偷取 ${playerDisplayName(next, targetId)} 的荣誉标记`,
+    })
+    return discardPlayedCard(advanceQueueIndex(next), ownerId, card.id)
   }
 
   if (variant === 'troublemaker') {
-    return {
+    let next = {
       ...room,
       currentNight: {
         ...room.currentNight!,
@@ -1395,18 +1534,29 @@ function applyTricksterTargetSelection(
         }),
       },
     } as NinjaRoom
+    next = appendPublicNightEvent(next, {
+      kind: 'peek',
+      actorId: ownerId,
+      cardLabel: '麻烦制造者',
+      targetIds: [targetId],
+      text: `${playerDisplayName(next, ownerId)} · 麻烦制造者 · 查看了 ${playerDisplayName(next, targetId)}`,
+    })
+    return next
   }
 
   if (variant === 'judgement') {
-    // Reveal own house, then kill target. Mirror Monk and Martyr cannot respond.
     const target = room.players?.[targetId]
     if (!target) return room
     const players = { ...room.players, [targetId]: { ...target, isAlive: false } }
-    return discardPlayedCard(
-      advanceQueueIndex(addPubliclyRevealed({ ...clearPending(room), players } as NinjaRoom, ownerId)),
-      ownerId,
-      card.id
-    )
+    let next = addPubliclyRevealed({ ...clearPending(room), players } as NinjaRoom, ownerId)
+    next = appendPublicNightEvent(next, {
+      kind: 'kill',
+      actorId: ownerId,
+      cardLabel: '审判',
+      targetIds: [targetId],
+      text: `${playerDisplayName(next, ownerId)} · 审判 · 公开身份并击杀 ${playerDisplayName(next, targetId)}`,
+    })
+    return discardPlayedCard(advanceQueueIndex(next), ownerId, card.id)
   }
 
   if (variant === 'spirit_merchant') {
@@ -1417,53 +1567,40 @@ function applyTricksterTargetSelection(
         pendingAction: makePendingAction({
           ownerId,
           card,
-          step: 'spirit_merchant_swap',
+          step: 'spirit_merchant_view',
           overrides: { spiritMerchantTargetId: targetId },
         }),
       },
     } as NinjaRoom
   }
 
-  // Defensive: an unknown trickster variant (e.g. legacy data from a pre-rename
-  // round) reaches here only if pick_target was somehow built for it. Discard
-  // the card cleanly so play can keep moving instead of leaving the player
-  // stuck on an unresponsive target picker.
   return discardPlayedCard(advanceQueueIndex(clearPending(room)), ownerId, card.id)
 }
 
-/**
- * Spirit Merchant: owner has already picked target. Now picks a viewing mode and
- * optionally a token to give away in exchange. For simplicity, the engine reveals
- * the data privately and lets the UI submit a "swap or skip" choice.
- *
- * payload.viewToken: pick a target token (random index) to view; null to view house instead.
- * payload.giveOwnTokenId: id of one of owner's tokens to give to target (null = no swap).
- * payload.takeTargetTokenId: id of target's token to take (must exist if giveOwnTokenId set).
- */
-export async function submitSpiritMerchantChoice(
+/** Spirit Merchant step 1: view house or one token (private), then move to swap step. */
+export async function submitSpiritMerchantView(
   roomId: string,
   playerId: string,
-  payload: {
-    viewKind: 'token' | 'house'
-    swap: { giveOwnTokenId: string; takeTargetTokenId: string } | null
-  }
+  viewKind: 'token' | 'house'
 ): Promise<void> {
   const roomRef = ref(db, `ninjaRooms/${roomId}`)
   let privateUpdate: { ownerId: string; patch: Record<string, unknown> } | null = null
+  let targetIdForLog: string | null = null
   await runTransaction(roomRef, (raw) => {
     if (!raw) return raw
     const room = raw as NinjaRoom
     const pa = room.currentNight?.pendingAction
-    if (!pa || pa.step !== 'spirit_merchant_swap' || pa.playerId !== playerId) return raw
+    if (!pa || pa.step !== 'spirit_merchant_view' || pa.playerId !== playerId) return raw
     const targetId = pa.spiritMerchantTargetId
     if (!targetId) return raw
     const owner = room.players?.[playerId]
     const target = room.players?.[targetId]
     if (!owner || !target) return raw
+    targetIdForLog = targetId
 
     let viewedToken: HonorToken | null = null
     let viewedHouse: HouseCard | null = null
-    if (payload.viewKind === 'token') {
+    if (viewKind === 'token') {
       const tokens = target.honorTokens ?? []
       if (tokens.length > 0) viewedToken = tokens[randomInt(tokens.length)]!
     } else {
@@ -1480,40 +1617,100 @@ export async function submitSpiritMerchantChoice(
       },
     }
 
+    const card = (owner.hand ?? []).find((c) => c.id === pa.cardId)
+    if (!card) return raw
+    let next = {
+      ...room,
+      currentNight: {
+        ...room.currentNight!,
+        pendingAction: makePendingAction({
+          ownerId: playerId,
+          card,
+          step: 'spirit_merchant_swap',
+          overrides: { spiritMerchantTargetId: targetId },
+        }),
+      },
+    } as NinjaRoom
+    next = appendPublicNightEvent(next, {
+      kind: 'spirit_merchant',
+      actorId: playerId,
+      cardLabel: '灵商',
+      targetIds: [targetId],
+      text: `${playerDisplayName(next, playerId)} · 灵商 · 查看了 ${playerDisplayName(next, targetId)} 的${
+        viewKind === 'house' ? '流派' : '荣誉标记'
+      }`,
+    })
+    return next
+  })
+  if (privateUpdate) await applyPrivateUpdate(roomId, privateUpdate)
+  void targetIdForLog
+}
+
+/** Spirit Merchant step 2: optional 1-for-1 token swap (requires own token). */
+export async function submitSpiritMerchantSwap(
+  roomId: string,
+  playerId: string,
+  swap: { giveOwnTokenId: string; takeTargetTokenId: string } | null
+): Promise<void> {
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    const pa = room.currentNight?.pendingAction
+    if (!pa || pa.step !== 'spirit_merchant_swap' || pa.playerId !== playerId) return raw
+    const targetId = pa.spiritMerchantTargetId
+    if (!targetId) return raw
+    const owner = room.players?.[playerId]
+    const target = room.players?.[targetId]
+    if (!owner || !target) return raw
+
     let players = { ...room.players }
-    if (payload.swap) {
-      const give = (owner.honorTokens ?? []).find((t) => t.id === payload.swap!.giveOwnTokenId)
-      const take = (target.honorTokens ?? []).find((t) => t.id === payload.swap!.takeTargetTokenId)
+    let didSwap = false
+    if (swap) {
+      const give = (owner.honorTokens ?? []).find((t) => t.id === swap.giveOwnTokenId)
+      const take = (target.honorTokens ?? []).find((t) => t.id === swap.takeTargetTokenId)
       if (give && take) {
+        didSwap = true
         players[playerId] = {
           ...owner,
-          honorTokens: [
-            ...(owner.honorTokens ?? []).filter((t) => t.id !== give.id),
-            take,
-          ],
+          honorTokens: [...(owner.honorTokens ?? []).filter((t) => t.id !== give.id), take],
         }
         players[targetId] = {
           ...target,
-          honorTokens: [
-            ...(target.honorTokens ?? []).filter((t) => t.id !== take.id),
-            give,
-          ],
+          honorTokens: [...(target.honorTokens ?? []).filter((t) => t.id !== take.id), give],
         }
       }
     }
 
-    return discardPlayedCard(
-      advanceQueueIndex({ ...clearPending(room), players } as NinjaRoom),
-      playerId,
-      pa.cardId
-    )
+    let next = { ...clearPending(room), players } as NinjaRoom
+    if (didSwap) {
+      next = appendPublicNightEvent(next, {
+        kind: 'spirit_merchant',
+        actorId: playerId,
+        cardLabel: '灵商',
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · 灵商 · 与 ${playerDisplayName(next, targetId)} 交换了荣誉标记`,
+      })
+    }
+    return discardPlayedCard(advanceQueueIndex(next), playerId, pa.cardId)
   })
-
-  if (privateUpdate) await applyPrivateUpdate(roomId, privateUpdate)
   await tryAdvanceResolution(roomId)
 }
 
-/** Gravedigger: owner picks one card from the current discard pile (cardIdOrNone). */
+/** @deprecated Use submitSpiritMerchantView + submitSpiritMerchantSwap. */
+export async function submitSpiritMerchantChoice(
+  roomId: string,
+  playerId: string,
+  payload: {
+    viewKind: 'token' | 'house'
+    swap: { giveOwnTokenId: string; takeTargetTokenId: string } | null
+  }
+): Promise<void> {
+  await submitSpiritMerchantView(roomId, playerId, payload.viewKind)
+  await submitSpiritMerchantSwap(roomId, playerId, payload.swap)
+}
+
+/** Gravedigger: must pick one option when available → then decide play-now or keep. */
 export async function submitGravediggerPick(
   roomId: string,
   playerId: string,
@@ -1527,33 +1724,112 @@ export async function submitGravediggerPick(
     if (!pa || pa.step !== 'gravedigger_pick' || pa.playerId !== playerId) return raw
     const owner = room.players?.[playerId]
     if (!owner) return raw
-
-    let players = { ...room.players }
-    let discard = [...(room.ninjaDiscardPile ?? [])]
     const optionIds = pa.gravediggerOptionIds ?? []
-    if (pickedCardId) {
-      // Must be one of the two cards that the system revealed.
-      if (!optionIds.includes(pickedCardId)) return raw
-      const idx = discard.findIndex((c) => c.id === pickedCardId)
-      if (idx === -1) return raw
-      const taken = discard[idx]!
-      discard = discard.filter((_, i) => i !== idx)
-      players[playerId] = {
-        ...owner,
-        hand: [...(owner.hand ?? []), taken],
-      }
+    const card = (owner.hand ?? []).find((c) => c.id === pa.cardId)
+    if (!card) return raw
+
+    // Empty discard options: just finish the gravedigger.
+    if (optionIds.length === 0) {
+      let next = clearPending(room)
+      next = appendPublicNightEvent(next, {
+        kind: 'gravedigger',
+        actorId: playerId,
+        cardLabel: '盗墓者',
+        text: `${playerDisplayName(next, playerId)} · 盗墓者 · 弃牌堆为空`,
+      })
+      return discardPlayedCard(advanceQueueIndex(next), playerId, pa.cardId)
     }
 
-    return discardPlayedCard(
-      advanceQueueIndex({
-        ...clearPending(room),
-        players,
-        ninjaDiscardPile: discard,
-      } as NinjaRoom),
-      playerId,
-      pa.cardId
-    )
+    if (!pickedCardId || !optionIds.includes(pickedCardId)) return raw
+    const discard = room.ninjaDiscardPile ?? []
+    if (!discard.some((c) => c.id === pickedCardId)) return raw
+
+    return {
+      ...room,
+      currentNight: {
+        ...room.currentNight!,
+        pendingAction: makePendingAction({
+          ownerId: playerId,
+          card,
+          step: 'gravedigger_decide',
+          overrides: {
+            gravediggerOptionIds: optionIds,
+            gravediggerPickedId: pickedCardId,
+          },
+        }),
+      },
+    } as NinjaRoom
   })
+}
+
+/** Gravedigger step 2: keep in hand or play immediately (may skip phases). */
+export async function submitGravediggerDecision(
+  roomId: string,
+  playerId: string,
+  playNow: boolean
+): Promise<void> {
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    const pa = room.currentNight?.pendingAction
+    if (!pa || pa.step !== 'gravedigger_decide' || pa.playerId !== playerId) return raw
+    const pickedId = pa.gravediggerPickedId
+    if (!pickedId) return raw
+    const owner = room.players?.[playerId]
+    if (!owner) return raw
+
+    let discard = [...(room.ninjaDiscardPile ?? [])]
+    const idx = discard.findIndex((c) => c.id === pickedId)
+    if (idx === -1) return raw
+    const taken = discard[idx]!
+    discard = discard.filter((_, i) => i !== idx)
+
+    const players = { ...room.players }
+    players[playerId] = {
+      ...owner,
+      hand: [...(owner.hand ?? []), taken],
+    }
+
+    let next = {
+      ...clearPending(room),
+      players,
+      ninjaDiscardPile: discard,
+    } as NinjaRoom
+
+    // Discard the Gravedigger itself and advance its queue slot.
+    next = discardPlayedCard(advanceQueueIndex(next), playerId, pa.cardId)
+
+    if (!playNow) {
+      next = appendPublicNightEvent(next, {
+        kind: 'gravedigger',
+        actorId: playerId,
+        cardLabel: '盗墓者',
+        text: `${playerDisplayName(next, playerId)} · 盗墓者 · 取走 1 张并留下`,
+      })
+      return next
+    }
+
+    // Play immediately: set pending for the dug card (already in hand).
+    const dugPending = buildPendingAction(playerId, taken, next.ninjaDiscardPile ?? [], next)
+    next = appendPublicNightEvent(next, {
+      kind: 'gravedigger',
+      actorId: playerId,
+      cardLabel: '盗墓者',
+      text: `${playerDisplayName(next, playerId)} · 盗墓者 · 取走并立即打出「${taken.name}」`,
+    })
+    if (dugPending) {
+      return {
+        ...next,
+        currentNight: next.currentNight
+          ? { ...next.currentNight, pendingAction: dugPending }
+          : next.currentNight,
+      } as NinjaRoom
+    }
+    // Self-resolving dug card (e.g. empty-target thief)
+    return applySelfResolvingCard(next, playerId, taken)
+  })
+  await primeTroublemakerPeek(roomId)
   await tryAdvanceResolution(roomId)
 }
 
@@ -1594,7 +1870,16 @@ export async function submitTroublemakerDecision(
     const targetId = pa.troublemakerTargetId
     if (!targetId) return raw
     let next = clearPending(room)
-    if (reveal) next = addPubliclyRevealed(next, targetId)
+    if (reveal) {
+      next = addPubliclyRevealed(next, targetId)
+      next = appendPublicNightEvent(next, {
+        kind: 'public_reveal',
+        actorId: playerId,
+        cardLabel: '麻烦制造者',
+        targetIds: [targetId],
+        text: `${playerDisplayName(next, playerId)} · 麻烦制造者 · 当众揭示 ${playerDisplayName(next, targetId)} 的流派`,
+      })
+    }
     return discardPlayedCard(advanceQueueIndex(next), playerId, pa.cardId)
   })
   await applyPrivateUpdate(roomId, {
@@ -1624,7 +1909,7 @@ export async function submitShapeshifterB(
     if (!owner) return raw
     const card = (owner.hand ?? []).find((c) => c.id === pa.cardId)
     if (!card) return raw
-    return {
+    let next = {
       ...room,
       currentNight: {
         ...room.currentNight!,
@@ -1636,6 +1921,14 @@ export async function submitShapeshifterB(
         }),
       },
     } as NinjaRoom
+    next = appendPublicNightEvent(next, {
+      kind: 'peek',
+      actorId: playerId,
+      cardLabel: '变形者',
+      targetIds: [aId, bId],
+      text: `${playerDisplayName(next, playerId)} · 变形者 · 查看了 ${playerDisplayName(next, aId)}、${playerDisplayName(next, bId)}`,
+    })
+    return next
   })
   // Write both peeks to owner's private state.
   const post = (await get(roomRef)).val() as NinjaRoom | null
@@ -1689,6 +1982,14 @@ export async function submitShapeshifterDecision(
           [bId]: aHouse,
         },
       } as NinjaRoom
+      next = clearPublicHouseRevealFor(next, aId, bId)
+      next = appendPublicNightEvent(next, {
+        kind: 'swap_lock',
+        actorId: playerId,
+        cardLabel: '变形者',
+        targetIds: [aId, bId],
+        text: `${playerDisplayName(next, aId)}、${playerDisplayName(next, bId)} 的流派被交换（内容保密）；二人不可再自由查看自己的牌`,
+      })
     }
     return discardPlayedCard(advanceQueueIndex(next), playerId, pa.cardId)
   })
@@ -1703,6 +2004,25 @@ export async function submitShapeshifterDecision(
 // Reactive decisions (Mirror Monk / Martyr) handling
 // ============================================================================
 
+function drawHonorTokenFromBag(room: NinjaRoom, playerId: string): NinjaRoom {
+  const bag = [...(room.tokenBag ?? [])]
+  if (bag.length === 0) return room
+  const token = bag.shift()!
+  const player = room.players?.[playerId]
+  if (!player) return room
+  return {
+    ...room,
+    tokenBag: bag,
+    players: {
+      ...room.players,
+      [playerId]: {
+        ...player,
+        honorTokens: [...(player.honorTokens ?? []), token],
+      },
+    },
+  } as NinjaRoom
+}
+
 function openReactiveWindow(
   room: NinjaRoom,
   attackerId: string,
@@ -1712,18 +2032,15 @@ function openReactiveWindow(
 ): NinjaRoom {
   if (!room.currentNight) return room
   const players = room.players ?? {}
-  const eligibleMonkIds: string[] = []
   const victim = players[victimId]
+  const eligibleMonkIds: string[] = []
+  const eligibleMartyrIds: string[] = []
   if (victim?.isAlive && (victim.hand ?? []).some((c) => c.kind === 'mirror_monk')) {
     eligibleMonkIds.push(victimId)
   }
-  const seatOrder = getSeatOrder(room)
-  const eligibleMartyrIds = seatOrder.filter((pid) => {
-    const p = players[pid]
-    if (!p?.isAlive) return false
-    if (pid === victimId) return false
-    return (p.hand ?? []).some((c) => c.kind === 'martyr')
-  })
+  if (victim?.isAlive && (victim.hand ?? []).some((c) => c.kind === 'martyr')) {
+    eligibleMartyrIds.push(victimId)
+  }
 
   if (eligibleMonkIds.length === 0 && eligibleMartyrIds.length === 0) {
     return resolveReactiveWindow({
@@ -1747,8 +2064,6 @@ function openReactiveWindow(
   }
 
   const step = eligibleMonkIds.length > 0 ? 'monk' : 'martyr'
-  const currentResponderId = step === 'monk' ? victimId : eligibleMartyrIds[0]!
-
   return {
     ...room,
     currentNight: {
@@ -1759,10 +2074,10 @@ function openReactiveWindow(
         source,
         triggerCardId,
         step,
-        currentResponderId,
+        currentResponderId: victimId,
         eligibleMonkIds,
         eligibleMartyrIds,
-        pendingMartyrIds: eligibleMartyrIds,
+        pendingMartyrIds: [],
         responses: {},
       },
     },
@@ -1781,26 +2096,26 @@ export async function submitReactiveResponse(
     const reactive = room.currentNight?.reactive
     if (!reactive) return raw
     if (room.currentNight!.pendingAction) return raw
+    if (reactive.currentResponderId !== playerId) return raw
+    if (reactive.victimId !== playerId) return raw
+
     const monkIds = reactive.eligibleMonkIds ?? []
     const martyrIds = reactive.eligibleMartyrIds ?? []
-    const pendingMartyrIds = reactive.pendingMartyrIds ?? []
-    if (reactive.currentResponderId !== playerId) return raw
+    const responses = { ...(reactive.responses ?? {}), [playerId]: response }
 
     if (reactive.step === 'monk') {
-      const isEligible = monkIds.includes(playerId)
-      if (!isEligible) return raw
+      if (!monkIds.includes(playerId)) return raw
       if (response !== 'monk' && response !== 'pass') return raw
-      const responses = { ...(reactive.responses ?? {}), [playerId]: response }
       if (response === 'monk') {
         return resolveReactiveWindow({
           ...room,
           currentNight: {
             ...room.currentNight!,
-            reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds, responses },
+            reactive: { ...reactive, responses },
           },
         } as NinjaRoom)
       }
-      if (pendingMartyrIds.length > 0) {
+      if (martyrIds.includes(playerId)) {
         return {
           ...room,
           currentNight: {
@@ -1808,10 +2123,7 @@ export async function submitReactiveResponse(
             reactive: {
               ...reactive,
               step: 'martyr',
-              currentResponderId: pendingMartyrIds[0]!,
-              eligibleMonkIds: monkIds,
-              eligibleMartyrIds: martyrIds,
-              pendingMartyrIds,
+              currentResponderId: playerId,
               responses,
             },
           },
@@ -1821,122 +2133,120 @@ export async function submitReactiveResponse(
         ...room,
         currentNight: {
           ...room.currentNight!,
-          reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds: [], responses },
+          reactive: { ...reactive, responses },
         },
       } as NinjaRoom)
     }
 
-    const isEligible = martyrIds.includes(playerId)
-    if (!isEligible) return raw
-    if (response !== 'martyr' && response !== 'pass') return raw
-    const responses = { ...(reactive.responses ?? {}), [playerId]: response }
-    if (response === 'martyr') {
+    if (reactive.step === 'martyr') {
+      if (!martyrIds.includes(playerId)) return raw
+      if (response !== 'martyr' && response !== 'pass') return raw
       return resolveReactiveWindow({
         ...room,
         currentNight: {
           ...room.currentNight!,
-          reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds, responses },
+          reactive: { ...reactive, responses },
         },
       } as NinjaRoom)
     }
-    const remaining = pendingMartyrIds.filter((id) => id !== playerId)
-    if (remaining.length > 0) {
-      return {
-        ...room,
-        currentNight: {
-          ...room.currentNight!,
-          reactive: {
-            ...reactive,
-            currentResponderId: remaining[0]!,
-            eligibleMonkIds: monkIds,
-            eligibleMartyrIds: martyrIds,
-            pendingMartyrIds: remaining,
-            responses,
-          },
-        },
-      } as NinjaRoom
-    }
-    return resolveReactiveWindow({
-      ...room,
-      currentNight: {
-        ...room.currentNight!,
-        reactive: { ...reactive, eligibleMonkIds: monkIds, eligibleMartyrIds: martyrIds, pendingMartyrIds: [], responses },
-      },
-    } as NinjaRoom)
+
+    return raw
   })
   await tryAdvanceResolution(roomId)
 }
 
-/**
- * Apply the reactive window's outcome:
- *  - Mirror Monk wins (highest priority) → kill the attacker, victim survives
- *  - Else Martyr wins → kill the martyr, victim survives
- *  - Else default → kill the original victim
- * In all cases, played reactive cards are moved from hand to discard.
- */
 function resolveReactiveWindow(room: NinjaRoom): NinjaRoom {
   if (!room.currentNight?.reactive) return room
   const reactive = room.currentNight.reactive
-  // RTDB drops empty arrays/objects on roundtrip — coerce them back to safe defaults.
-  const eligibleMonkIds = reactive.eligibleMonkIds ?? []
-  const eligibleMartyrIds = reactive.eligibleMartyrIds ?? []
   const responses = reactive.responses ?? {}
   let players = { ...room.players }
   let discard = [...(room.ninjaDiscardPile ?? [])]
+  let next = room
 
-  const monkPlayerId = eligibleMonkIds.find((id) => responses[id] === 'monk')
-  const martyrPlayerId = eligibleMartyrIds.find((id) => responses[id] === 'martyr')
+  const victimId = reactive.victimId
+  const attackerId = reactive.attackerId
+  const monkPlayed = responses[victimId] === 'monk'
+  const martyrPlayed = responses[victimId] === 'martyr'
 
-  let killTargetId: string = reactive.victimId
+  let killTargetId: string | null = victimId
 
-  if (monkPlayerId) {
-    // Monk: discard the mirror_monk card, kill attacker.
-    const p = players[monkPlayerId]!
-    const monkCard = (p.hand ?? []).find((c) => c.kind === 'mirror_monk')
-    if (monkCard) {
-      players[monkPlayerId] = {
-        ...p,
-        hand: (p.hand ?? []).filter((c) => c.id !== monkCard.id),
-      }
+  if (monkPlayed) {
+    const p = players[victimId]
+    const monkCard = (p?.hand ?? []).find((c) => c.kind === 'mirror_monk')
+    if (monkCard && p) {
+      players[victimId] = { ...p, hand: (p.hand ?? []).filter((c) => c.id !== monkCard.id) }
       discard.push(monkCard)
     }
-    killTargetId = reactive.attackerId
-  } else if (martyrPlayerId) {
-    const p = players[martyrPlayerId]!
-    const martyrCard = (p.hand ?? []).find((c) => c.kind === 'martyr')
-    if (martyrCard) {
-      players[martyrPlayerId] = {
-        ...p,
-        hand: (p.hand ?? []).filter((c) => c.id !== martyrCard.id),
+    killTargetId = attackerId
+    next = appendPublicNightEvent(
+      { ...next, players, ninjaDiscardPile: discard } as NinjaRoom,
+      {
+        kind: 'reactive',
+        actorId: victimId,
+        cardLabel: '还施僧',
+        targetIds: [attackerId],
+        text: `${playerDisplayName(next, victimId)} · 还施僧 · 反弹，${playerDisplayName(next, attackerId)} 出局`,
       }
+    )
+    players = { ...next.players }
+    discard = [...(next.ninjaDiscardPile ?? [])]
+  } else if (martyrPlayed) {
+    const p = players[victimId]
+    const martyrCard = (p?.hand ?? []).find((c) => c.kind === 'martyr')
+    if (martyrCard && p) {
+      players[victimId] = { ...p, hand: (p.hand ?? []).filter((c) => c.id !== martyrCard.id) }
       discard.push(martyrCard)
     }
-    killTargetId = martyrPlayerId
+    killTargetId = null
+    next = { ...next, players, ninjaDiscardPile: discard } as NinjaRoom
+    next = drawHonorTokenFromBag(next, victimId)
+    next = appendPublicNightEvent(next, {
+      kind: 'reactive',
+      actorId: victimId,
+      cardLabel: '殉道者',
+      text: `${playerDisplayName(next, victimId)} · 殉道者 · 保命并获得荣誉标记`,
+    })
+    players = { ...next.players }
+    discard = [...(next.ninjaDiscardPile ?? [])]
   }
 
-  const victim = players[killTargetId]
-  if (victim) {
-    players[killTargetId] = { ...victim, isAlive: false }
-  }
-
-  // Discard the trigger card (the assassin/shinobi that opened the window).
-  const owner = players[reactive.attackerId]
-  if (owner) {
-    const triggerCard = (owner.hand ?? []).find((c) => c.id === reactive.triggerCardId)
-    if (triggerCard) {
-      players[reactive.attackerId] = {
-        ...owner,
-        hand: (owner.hand ?? []).filter((c) => c.id !== triggerCard.id),
-      }
-      discard.push(triggerCard)
+  if (killTargetId) {
+    const victim = players[killTargetId]
+    if (victim) players[killTargetId] = { ...victim, isAlive: false }
+    if (!monkPlayed) {
+      next = appendPublicNightEvent(
+        { ...next, players, ninjaDiscardPile: discard } as NinjaRoom,
+        {
+          kind: 'kill',
+          targetIds: [killTargetId],
+          text: `${playerDisplayName(next, killTargetId)} 出局`,
+        }
+      )
+      players = { ...next.players }
+      discard = [...(next.ninjaDiscardPile ?? [])]
+    } else {
+      next = { ...next, players, ninjaDiscardPile: discard } as NinjaRoom
     }
+  } else {
+    next = { ...next, players, ninjaDiscardPile: discard } as NinjaRoom
+  }
+
+  const attacker = next.players?.[attackerId]
+  const trigger = (attacker?.hand ?? []).find((c) => c.id === reactive.triggerCardId)
+  if (attacker && trigger) {
+    next = {
+      ...next,
+      players: {
+        ...next.players,
+        [attackerId]: { ...attacker, hand: (attacker.hand ?? []).filter((c) => c.id !== trigger.id) },
+      },
+      ninjaDiscardPile: [...(next.ninjaDiscardPile ?? []), trigger],
+    } as NinjaRoom
   }
 
   return advanceQueueIndex({
-    ...room,
-    players,
-    ninjaDiscardPile: discard,
-    currentNight: { ...room.currentNight, reactive: null },
+    ...next,
+    currentNight: { ...next.currentNight!, reactive: null },
   } as NinjaRoom)
 }
 
@@ -2191,12 +2501,13 @@ export async function restartNinjaToLobby(roomId: string, hostPlayerId: string):
     targetPlayerCount: room.targetPlayerCount ?? Math.max(MIN_NINJA_PLAYERS, getSeatedPlayerIds(room).length),
     seatOrder: getSeatedPlayerIds(room),
     seatAssignments: room.seatAssignments ?? {},
-    houseCardAssignments: {},
+    publiclyRevealedHouses: {},
     publiclyRevealedHouseIds: [],
     mastermindRevealedAliveIds: [],
     tokenBag: [],
     ninjaDiscardPile: [],
     currentNight: null,
+    publicNightLog: [],
     reveal: null,
     resultWinnerIds: null,
   }
