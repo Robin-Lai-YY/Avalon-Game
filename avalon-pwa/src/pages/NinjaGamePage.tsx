@@ -1795,15 +1795,19 @@ function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivate
   )
 }
 
+function houseCardSig(card: HouseCard): string {
+  return card.side === 'ronin' ? 'ronin' : `${card.side}:${card.rank}`
+}
+
 function privateRevealSignature(reveals: NinjaPrivateRoundState | null): string {
   if (!reveals) return ''
   return [
     reveals.spyReveals?.length ?? 0,
     reveals.mysticReveals?.length ?? 0,
     reveals.spiritMerchantViews?.length ?? 0,
-    reveals.shinobiPeek ? `${reveals.shinobiPeek.targetId}:${reveals.shinobiPeek.card.side}:${reveals.shinobiPeek.card.rank}` : '-',
+    reveals.shinobiPeek ? `${reveals.shinobiPeek.targetId}:${houseCardSig(reveals.shinobiPeek.card)}` : '-',
     reveals.troublemakerPeek
-      ? `${reveals.troublemakerPeek.targetId}:${reveals.troublemakerPeek.card.side}:${reveals.troublemakerPeek.card.rank}`
+      ? `${reveals.troublemakerPeek.targetId}:${houseCardSig(reveals.troublemakerPeek.card)}`
       : '-',
     reveals.shapeshifterPeeks
       ? `${reveals.shapeshifterPeeks.aId}/${reveals.shapeshifterPeeks.bId}`
