@@ -227,12 +227,7 @@ export function NinjaGamePage({
     previousStateRef.current = room.state
     if (!previousState || previousState === room.state) return
     if (!PHASE_TRANSITION_COPY[room.state]) return
-    const nonce = Date.now()
-    setPhaseTransition({ state: room.state, nonce })
-    const timeout = window.setTimeout(() => {
-      setPhaseTransition((current) => (current?.nonce === nonce ? null : current))
-    }, 2400)
-    return () => window.clearTimeout(timeout)
+    setPhaseTransition({ state: room.state, nonce: Date.now() })
   }, [room?.state])
 
   useEffect(() => {
@@ -434,7 +429,12 @@ export function NinjaGamePage({
     <div className="relative min-h-dvh overflow-x-hidden px-4 pb-8 pt-4 text-slate-100 animate-page-enter">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,rgba(225,29,72,0.16),transparent_32%),radial-gradient(circle_at_80%_18%,rgba(37,99,235,0.14),transparent_28%),linear-gradient(180deg,#020617,#070a13_46%,#020617)]" />
       <div className="pointer-events-none fixed inset-0 -z-10 opacity-[0.07] bg-[linear-gradient(rgba(255,255,255,0.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.7)_1px,transparent_1px)] bg-[size:44px_44px]" />
-      <NinjaPhaseTransitionOverlay transition={phaseTransition} />
+      <NinjaPhaseTransitionOverlay
+        transition={phaseTransition}
+        onDone={(nonce) => {
+          setPhaseTransition((current) => (current?.nonce === nonce ? null : current))
+        }}
+      />
       <div className="mx-auto flex max-w-5xl flex-col gap-4">
       <div className="relative z-50 flex items-center justify-between rounded-2xl border border-white/[0.08] bg-slate-950/70 px-3 py-2 shadow-xl shadow-black/20 backdrop-blur">
         <div>
@@ -758,27 +758,77 @@ function BattleStat({ label, value }: { label: string; value: string }) {
 
 function NinjaPhaseTransitionOverlay({
   transition,
+  onDone,
 }: {
   transition: { state: NinjaRoom['state']; nonce: number } | null
+  onDone: (nonce: number) => void
 }) {
-  if (!transition) return null
-  const copy = PHASE_TRANSITION_COPY[transition.state]
+  const [active, setActive] = useState<{ state: NinjaRoom['state']; nonce: number } | null>(null)
+  const [leaving, setLeaving] = useState(false)
+  const leaveTimerRef = useRef<number | null>(null)
+  const safetyTimerRef = useRef<number | null>(null)
+  const finishedRef = useRef(false)
+
+  function finish(nonce: number) {
+    if (finishedRef.current) return
+    finishedRef.current = true
+    setActive(null)
+    setLeaving(false)
+    onDone(nonce)
+  }
+
+  useEffect(() => {
+    if (!transition) return
+    finishedRef.current = false
+    if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current)
+    if (safetyTimerRef.current) window.clearTimeout(safetyTimerRef.current)
+    setActive(transition)
+    setLeaving(false)
+    // Soft hold, then exit fade — total ≈ 2.9s
+    leaveTimerRef.current = window.setTimeout(() => setLeaving(true), 2100)
+    return () => {
+      if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current)
+    }
+  }, [transition?.nonce])
+
+  useEffect(() => {
+    if (!leaving || !active) return
+    safetyTimerRef.current = window.setTimeout(() => finish(active.nonce), 900)
+    return () => {
+      if (safetyTimerRef.current) window.clearTimeout(safetyTimerRef.current)
+    }
+  }, [leaving, active?.nonce])
+
+  if (!active) return null
+  const copy = PHASE_TRANSITION_COPY[active.state]
   if (!copy) return null
+  const mode = leaving ? 'is-leaving' : 'is-entering'
 
   return createPortal(
     <div
-      key={transition.nonce}
-      className="pointer-events-none fixed left-0 top-0 z-[9999] flex w-screen items-center justify-center bg-slate-950/50 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
+      key={active.nonce}
+      className={`phase-transition-root pointer-events-none fixed left-0 top-0 z-[9999] flex w-screen items-center justify-center px-6 ${mode}`}
       style={{ height: '100dvh' }}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (!leaving) return
+        if (!String(event.animationName).includes('phase-veil-out')) return
+        finish(active.nonce)
+      }}
     >
-      <div className="w-full max-w-sm rounded-[2rem] border border-rose-200/15 bg-[#070b13]/95 p-6 text-center shadow-2xl shadow-black/50 motion-safe:animate-phase-card">
-        <p className="text-[0.625rem] font-black uppercase tracking-[0.32em] text-rose-200/70">
+      <div className="phase-transition-veil" aria-hidden />
+      <div className="phase-transition-glow" aria-hidden />
+      <div className={`phase-transition-card relative w-full max-w-sm rounded-[2rem] border border-rose-200/20 bg-[#070b13]/92 p-6 text-center shadow-2xl shadow-black/50 backdrop-blur-sm ${mode}`}>
+        <div className="phase-transition-sheen pointer-events-none absolute inset-x-6 top-0 h-px overflow-hidden" aria-hidden>
+          <span className="phase-transition-sheen-bar block h-full w-full" />
+        </div>
+        <p className="phase-transition-eyebrow text-[0.625rem] font-black uppercase tracking-[0.32em] text-rose-200/75">
           {copy.eyebrow}
         </p>
-        <p className="mt-3 text-2xl font-black tracking-tight text-white">
+        <p className="phase-transition-title mt-3 text-2xl font-black tracking-tight text-white">
           {copy.title}
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
+        <p className="phase-transition-subtitle mt-2 text-sm leading-relaxed text-slate-300">
           {copy.subtitle}
         </p>
       </div>
@@ -1497,7 +1547,7 @@ function PendingActionPanel({
 
 function NightActionLogCard({ room }: { room: NinjaRoom }) {
   const log = room.publicNightLog ?? []
-  const groups = useMemo(() => groupPublicNightLog(log), [log])
+  const groups = useMemo(() => groupPublicNightLog(log, room), [log, room])
   if (groups.length === 0) return null
   return (
     <div className="avalon-card p-4 border border-sky-500/20 bg-sky-950/10">
@@ -1521,12 +1571,18 @@ function NightActionLogCard({ room }: { room: NinjaRoom }) {
                   )
                 }
                 if (item.kind === 'play') {
+                  const tag = item.actionTag
                   return (
                     <li key={item.id} className="text-[0.8125rem] text-slate-200/90 leading-snug">
-                      <span className="mr-1.5 rounded bg-indigo-400/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-indigo-200">
-                        出牌
+                      <span
+                        className={`mr-1.5 rounded px-1.5 py-0.5 text-[0.625rem] font-medium ${
+                          tag?.className ?? 'bg-indigo-400/15 text-indigo-200'
+                        }`}
+                      >
+                        {tag?.label ?? '出牌'}
                       </span>
-                      {item.text}
+                      {item.actor} 打出 {item.card}
+                      {item.clauses.length > 0 ? ` · ${item.clauses.join(' · ')}` : ''}
                     </li>
                   )
                 }
@@ -1553,7 +1609,14 @@ function NightActionLogCard({ room }: { room: NinjaRoom }) {
 
 type PublicLogItem =
   | { kind: 'skip'; id: string }
-  | { kind: 'play'; id: string; text: string }
+  | {
+      kind: 'play'
+      id: string
+      actor: string
+      card: string
+      clauses: string[]
+      actionTag: { label: string; className: string } | null
+    }
   | { kind: 'event'; id: string; event: NinjaPublicNightEvent }
 
 type PublicLogGroup = {
@@ -1572,6 +1635,18 @@ const PHASE_META: Record<string, { title: string; badgeClass: string }> = {
   mastermind: { title: '首脑', badgeClass: 'bg-fuchsia-400/20 text-fuchsia-200' },
   misc: { title: '其他', badgeClass: 'bg-white/[0.08] text-slate-300' },
 }
+
+/** Events that belong to the card player and can merge into the「打出」line. */
+const MERGEABLE_EVENT_KINDS = new Set<NinjaPublicNightEvent['kind']>([
+  'peek',
+  'kill',
+  'steal',
+  'public_reveal',
+  'gravedigger',
+  'spirit_merchant',
+  'swap_lock',
+  'mastermind',
+])
 
 function phaseKeyFromHeaderText(text: string): string | null {
   if (text.startsWith('密探')) return 'spy'
@@ -1604,7 +1679,78 @@ function phaseKeyFromEvent(e: NinjaPublicNightEvent): string | null {
   return null
 }
 
-function groupPublicNightLog(log: NinjaPublicNightEvent[]): PublicLogGroup[] {
+function parsePlayText(text: string): { actor: string; card: string } | null {
+  const m = text.match(/^(.+?) 打出 (.+)$/)
+  if (!m) return null
+  return { actor: m[1]!.trim(), card: m[2]!.trim() }
+}
+
+function cardLabelMatchesPlay(cardLabel: string, playCard: string): boolean {
+  const a = cardLabel.trim()
+  const b = playCard.trim()
+  if (!a || !b) return false
+  if (a === b) return true
+  // 「上忍」matches「上忍 3」;「密探 1」exact preferred elsewhere
+  if (b.startsWith(a + ' ') || b.startsWith(a)) return true
+  if (a.startsWith(b + ' ') || a.startsWith(b)) return true
+  return false
+}
+
+function eventActorName(e: NinjaPublicNightEvent, room: NinjaRoom): string | null {
+  if (e.actorId && room.players?.[e.actorId]?.name) return room.players[e.actorId]!.name
+  const parts = e.text.split(' · ')
+  if (parts.length >= 1 && parts[0] && !parts[0].includes(' ')) return parts[0]
+  if (parts.length >= 1) return parts[0]!.trim()
+  return null
+}
+
+/** Extract the action clause after「演员 · 牌名 · …」. */
+function eventActionClause(e: NinjaPublicNightEvent): string {
+  const parts = e.text.split(' · ')
+  if (e.cardLabel && parts.length >= 3 && parts[1] === e.cardLabel) {
+    return parts.slice(2).join(' · ').trim()
+  }
+  if (parts.length >= 3) return parts.slice(2).join(' · ').trim()
+  if (parts.length === 2) return parts[1]!.trim()
+  return e.text.trim()
+}
+
+function mergeActionTag(
+  kind: NinjaPublicNightEvent['kind'],
+  cardLabel: string | null | undefined
+): { label: string; className: string } {
+  if (kind === 'peek') return { label: '窥探', className: 'bg-sky-400/15 text-sky-200' }
+  if (kind === 'kill') return { label: '击杀', className: 'bg-rose-400/15 text-rose-200' }
+  if (kind === 'steal') return { label: '偷窃', className: 'bg-amber-400/15 text-amber-200' }
+  if (kind === 'public_reveal') return { label: '公开', className: 'bg-amber-400/15 text-amber-200' }
+  if (kind === 'gravedigger') return { label: '盗墓', className: 'bg-amber-400/15 text-amber-200' }
+  if (kind === 'spirit_merchant') return { label: '灵商', className: 'bg-amber-400/15 text-amber-200' }
+  if (kind === 'swap_lock') return { label: '交换', className: 'bg-amber-400/15 text-amber-200' }
+  if (kind === 'mastermind') return { label: '公开', className: 'bg-fuchsia-400/15 text-fuchsia-200' }
+  if (cardLabel?.includes('审判')) return { label: '审判', className: 'bg-amber-400/15 text-amber-200' }
+  return { label: '出牌', className: 'bg-indigo-400/15 text-indigo-200' }
+}
+
+function findMergePlay(
+  group: PublicLogGroup,
+  e: NinjaPublicNightEvent,
+  room: NinjaRoom
+): Extract<PublicLogItem, { kind: 'play' }> | null {
+  if (!MERGEABLE_EVENT_KINDS.has(e.kind)) return null
+  // Kill without actor (e.g.「X 出局」after reactive) is aftermath — keep separate.
+  if (e.kind === 'kill' && !e.actorId && !e.cardLabel) return null
+
+  const actor = eventActorName(e, room)
+  const label = (e.cardLabel ?? '').trim()
+  if (!actor || !label) return null
+
+  const plays = group.items.filter((it): it is Extract<PublicLogItem, { kind: 'play' }> => it.kind === 'play')
+  const exact = plays.find((p) => p.actor === actor && p.card === label)
+  if (exact) return exact
+  return plays.find((p) => p.actor === actor && cardLabelMatchesPlay(label, p.card)) ?? null
+}
+
+function groupPublicNightLog(log: NinjaPublicNightEvent[], room: NinjaRoom): PublicLogGroup[] {
   const groups: PublicLogGroup[] = []
   let current: PublicLogGroup | null = null
 
@@ -1627,13 +1773,41 @@ function groupPublicNightLog(log: NinjaPublicNightEvent[]): PublicLogGroup[] {
       const body = e.text.replace(/^[^：]*：/, '').trim()
       const plays = body ? body.split('；').map((s) => s.trim()).filter(Boolean) : []
       plays.forEach((text, pi) => {
-        group.items.push({ kind: 'play', id: `${e.id || index}-play-${pi}`, text })
+        const parsed = parsePlayText(text)
+        if (!parsed) {
+          group.items.push({
+            kind: 'play',
+            id: `${e.id || index}-play-${pi}`,
+            actor: text,
+            card: '',
+            clauses: [],
+            actionTag: null,
+          })
+          return
+        }
+        group.items.push({
+          kind: 'play',
+          id: `${e.id || index}-play-${pi}`,
+          actor: parsed.actor,
+          card: parsed.card,
+          clauses: [],
+          actionTag: null,
+        })
       })
       return
     }
 
     const key = phaseKeyFromEvent(e) ?? current?.key ?? 'misc'
     const group = openGroup(key)
+    const play = findMergePlay(group, e, room)
+    if (play) {
+      const clause = eventActionClause(e)
+      if (clause && !play.clauses.includes(clause)) play.clauses.push(clause)
+      // Prefer the latest meaningful action tag (peek → kill upgrades to 击杀).
+      play.actionTag = mergeActionTag(e.kind, e.cardLabel)
+      return
+    }
+
     group.items.push({ kind: 'event', id: e.id || `evt-${index}`, event: e })
   })
 

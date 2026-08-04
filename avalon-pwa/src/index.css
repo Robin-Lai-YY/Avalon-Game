@@ -251,6 +251,112 @@ a.tap-target {
   }
 }
 
+@keyframes phase-veil-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes phase-veil-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes phase-glow-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes phase-glow-out {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@keyframes phase-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(22px) scale(0.94);
+    filter: blur(6px);
+  }
+  55% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes phase-card-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px) scale(1.03);
+    filter: blur(4px);
+  }
+}
+
+@keyframes phase-text-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes phase-text-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes phase-sheen {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
 @keyframes reveal-flash {
   0% {
     box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.55);
@@ -591,6 +697,103 @@ a.tap-target {
 
 .animate-phase-card {
   animation: phase-card 2.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.phase-transition-root {
+  isolation: isolate;
+  background: rgba(2, 6, 23, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.phase-transition-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(225, 29, 72, 0.22), transparent 68%),
+    radial-gradient(ellipse 55% 45% at 72% 28%, rgba(37, 99, 235, 0.18), transparent 62%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.12), rgba(2, 6, 23, 0.55) 55%, rgba(2, 6, 23, 0.72));
+}
+
+.phase-transition-glow {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: min(28rem, 88vw);
+  height: 16rem;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(251, 113, 133, 0.22), transparent 68%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.phase-transition-root.is-entering {
+  animation: phase-veil-in 0.85s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.phase-transition-root.is-leaving {
+  animation: phase-veil-out 0.8s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.phase-transition-root.is-entering .phase-transition-glow {
+  animation: phase-glow-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.phase-transition-root.is-leaving .phase-transition-glow {
+  animation: phase-glow-out 0.75s ease-in both;
+}
+
+.phase-transition-card.is-entering {
+  animation: phase-card-in 0.95s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.phase-transition-card.is-leaving {
+  animation: phase-card-out 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.phase-transition-root.is-entering .phase-transition-eyebrow {
+  animation: phase-text-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.phase-transition-root.is-entering .phase-transition-title {
+  animation: phase-text-in 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both;
+}
+
+.phase-transition-root.is-entering .phase-transition-subtitle {
+  animation: phase-text-in 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.34s both;
+}
+
+.phase-transition-root.is-leaving .phase-transition-eyebrow,
+.phase-transition-root.is-leaving .phase-transition-title,
+.phase-transition-root.is-leaving .phase-transition-subtitle {
+  animation: phase-text-out 0.45s ease-in both;
+}
+
+.phase-transition-sheen-bar {
+  background: linear-gradient(90deg, transparent, rgba(255, 228, 230, 0.55), transparent);
+}
+
+.phase-transition-root.is-entering .phase-transition-sheen-bar {
+  animation: phase-sheen 1.4s ease-in-out 0.35s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-transition-root.is-entering,
+  .phase-transition-root.is-leaving,
+  .phase-transition-root.is-entering .phase-transition-glow,
+  .phase-transition-root.is-leaving .phase-transition-glow,
+  .phase-transition-card.is-entering,
+  .phase-transition-card.is-leaving,
+  .phase-transition-root.is-entering .phase-transition-eyebrow,
+  .phase-transition-root.is-entering .phase-transition-title,
+  .phase-transition-root.is-entering .phase-transition-subtitle,
+  .phase-transition-root.is-leaving .phase-transition-eyebrow,
+  .phase-transition-root.is-leaving .phase-transition-title,
+  .phase-transition-root.is-leaving .phase-transition-subtitle,
+  .phase-transition-root.is-entering .phase-transition-sheen-bar {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
 }
 
 .animate-reveal-flash {
