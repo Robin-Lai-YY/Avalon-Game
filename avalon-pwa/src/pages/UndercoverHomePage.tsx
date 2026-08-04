@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createUndercoverRoom,
   joinUndercoverRoom,
+  reclaimUndercoverSeatByName,
   reconnectUndercoverRoom,
 } from '../services/undercoverEngine'
 import {
@@ -9,12 +10,37 @@ import {
   loadUndercoverSession,
 } from '../utils/undercoverSessionStorage'
 
+type ReclaimPrompt = {
+  roomId: string
+  name: string
+  candidateName: string
+  offline: boolean
+}
+
 type UndercoverHomePageProps = {
   onBackToHub: () => void
   notice?: string
   onClearNotice?: () => void
-  onEnterLobby: (roomId: string, playerId: string, isHost: boolean, reconnectToken?: string) => void
-  onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string, reconnectToken?: string) => void
+  onEnterLobby: (
+    roomId: string,
+    playerId: string,
+    isHost: boolean,
+    reconnectToken?: string,
+    seatGeneration?: number
+  ) => void
+  onReconnect?: (
+    roomId: string,
+    playerId: string,
+    isHost: boolean,
+    state: string,
+    reconnectToken?: string,
+    seatGeneration?: number
+  ) => void
+}
+
+function readInviteRoomFromUrl(): string | null {
+  const room = new URLSearchParams(window.location.search).get('room')?.trim().toUpperCase()
+  return room || null
 }
 
 export function UndercoverHomePage({
@@ -30,25 +56,41 @@ export function UndercoverHomePage({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [quickReconnecting, setQuickReconnecting] = useState(false)
+  const [reclaimPrompt, setReclaimPrompt] = useState<ReclaimPrompt | null>(null)
+  const [inviteRoom] = useState<string | null>(() => readInviteRoomFromUrl())
+  const joinNameRef = useRef<HTMLInputElement>(null)
 
+  const isInviteJoin = Boolean(inviteRoom)
   const savedSession = loadUndercoverSession()
+  const showQuickReconnect =
+    Boolean(savedSession) && (!isInviteJoin || savedSession?.roomId === inviteRoom)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const room = params.get('room')?.trim().toUpperCase()
+    if (inviteRoom) {
+      setRoomCode(inviteRoom)
+      return
+    }
+    const room = readInviteRoomFromUrl()
     if (room) setRoomCode(room)
-  }, [])
+  }, [inviteRoom])
+
+  useEffect(() => {
+    if (!isInviteJoin) return
+    const t = window.setTimeout(() => joinNameRef.current?.focus(), 100)
+    return () => window.clearTimeout(t)
+  }, [isInviteJoin])
 
   async function handleCreateRoom() {
     setError('')
+    setReclaimPrompt(null)
     if (!name.trim()) {
       setError('请输入你的名字')
       return
     }
     setLoading(true)
     try {
-      const { roomId, playerId, reconnectToken } = await createUndercoverRoom(name.trim())
-      onEnterLobby(roomId, playerId, true, reconnectToken)
+      const { roomId, playerId, reconnectToken, seatGeneration } = await createUndercoverRoom(name.trim())
+      onEnterLobby(roomId, playerId, true, reconnectToken, seatGeneration)
     } catch (e) {
       setError(e instanceof Error ? e.message : '创建房间失败')
     } finally {
@@ -58,7 +100,8 @@ export function UndercoverHomePage({
 
   async function handleJoinRoom() {
     setError('')
-    const code = roomCode.trim().toUpperCase()
+    setReclaimPrompt(null)
+    const code = (isInviteJoin ? inviteRoom : roomCode)?.trim().toUpperCase() ?? ''
     if (!code) {
       setError('请输入房间码')
       return
@@ -69,10 +112,54 @@ export function UndercoverHomePage({
     }
     setLoading(true)
     try {
-      const { playerId, reconnectToken } = await joinUndercoverRoom(code, joinName.trim())
-      onEnterLobby(code, playerId, false, reconnectToken)
+      const result = await joinUndercoverRoom(code, joinName.trim())
+      if ('needsReclaim' in result && result.needsReclaim) {
+        setReclaimPrompt({
+          roomId: code,
+          name: joinName.trim(),
+          candidateName: result.candidateName,
+          offline: result.offline,
+        })
+        return
+      }
+      if (result.rejoined && onReconnect) {
+        onReconnect(
+          code,
+          result.playerId,
+          result.isHost,
+          result.state,
+          result.reconnectToken,
+          result.seatGeneration
+        )
+      } else {
+        onEnterLobby(code, result.playerId, result.isHost, result.reconnectToken, result.seatGeneration)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '加入房间失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConfirmReclaim() {
+    if (!reclaimPrompt) return
+    setLoading(true)
+    setError('')
+    try {
+      const recon = await reclaimUndercoverSeatByName(reclaimPrompt.roomId, reclaimPrompt.name, {
+        force: true,
+      })
+      setReclaimPrompt(null)
+      onReconnect?.(
+        reclaimPrompt.roomId,
+        recon.playerId,
+        recon.isHost,
+        recon.state,
+        recon.reconnectToken,
+        recon.seatGeneration
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '认领座位失败')
     } finally {
       setLoading(false)
     }
@@ -89,7 +176,8 @@ export function UndercoverHomePage({
         recon.playerId,
         recon.isHost,
         recon.state,
-        savedSession.reconnectToken
+        recon.reconnectToken ?? savedSession.reconnectToken,
+        recon.seatGeneration
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : '重连失败')
@@ -112,8 +200,18 @@ export function UndercoverHomePage({
 
       <div className="text-center mb-6">
         <p className="section-label mb-2">谁是卧底</p>
-        <h1 className="text-3xl font-bold tracking-tight text-white/95">联机裁判系统</h1>
-        <p className="mt-2 text-sm text-slate-400">开房后就能玩，发言线下进行，投票在这里完成。</p>
+        {isInviteJoin ? (
+          <>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white/95">加入房间</h1>
+            <p className="mt-2 font-mono text-lg tracking-wider text-emerald-300/90">{inviteRoom}</p>
+            <p className="mt-2 text-sm text-slate-400">输入你的名字即可进房；若曾掉线请用原来的昵称。</p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold tracking-tight text-white/95">联机裁判系统</h1>
+            <p className="mt-2 text-sm text-slate-400">开房后就能玩，发言线下进行，投票在这里完成。</p>
+          </>
+        )}
       </div>
 
       {notice && (
@@ -127,7 +225,36 @@ export function UndercoverHomePage({
         </div>
       )}
 
-      {savedSession && (
+      {reclaimPrompt && (
+        <div className="w-full max-w-sm mb-5 avalon-card border border-sky-400/25 p-4 animate-scale-in">
+          <p className="text-sm font-medium text-slate-100">
+            房间里已有「{reclaimPrompt.candidateName}」
+          </p>
+          <p className="mt-1.5 text-[0.8125rem] text-slate-400 leading-relaxed">
+            {reclaimPrompt.offline
+              ? '该座位看起来已离线。若这是你，可以回到原座位。'
+              : '该座位似乎仍在线。若刚才是你被挤出或换了微信页面，可确认认领；否则请换个名字。'}
+          </p>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void handleConfirmReclaim()}
+            className="w-full mt-3 min-h-[44px] rounded-xl btn-primary px-4 py-2.5 font-semibold disabled:opacity-50 text-sm"
+          >
+            {reclaimPrompt.offline ? '回到座位（离线）' : '确定是我，回到座位'}
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setReclaimPrompt(null)}
+            className="w-full mt-2 min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-400 text-xs font-medium"
+          >
+            换个名字
+          </button>
+        </div>
+      )}
+
+      {showQuickReconnect && savedSession && (
         <div className="w-full max-w-sm mb-5 avalon-card avalon-card-glow-good p-4 animate-scale-in">
           <p className="text-sm font-medium text-slate-200">你有进行中的卧底对局</p>
           <p className="text-[0.75rem] text-slate-400 mt-0.5 font-mono">房间 {savedSession.roomId}</p>
@@ -164,53 +291,81 @@ export function UndercoverHomePage({
       )}
 
       <div className="flex flex-col gap-4 w-full max-w-sm">
-        <div className="avalon-card p-5 flex flex-col gap-3">
-          <p className="section-label">创建房间</p>
-          <input
-            type="text"
-            placeholder="你的名字"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input-glass"
-          />
-          <button
-            type="button"
-            onClick={handleCreateRoom}
-            disabled={loading}
-            className="min-h-[48px] btn-primary px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem]"
-          >
-            创建卧底房间
-          </button>
-        </div>
+        {isInviteJoin ? (
+          <div className="avalon-card p-5 flex flex-col gap-3">
+            <p className="section-label">你的名字</p>
+            <input
+              ref={joinNameRef}
+              type="text"
+              placeholder="输入昵称后加入"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleJoinRoom()
+              }}
+              className="input-glass"
+              autoComplete="nickname"
+            />
+            <button
+              type="button"
+              onClick={handleJoinRoom}
+              disabled={loading}
+              className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
+            >
+              {loading ? '加入中…' : '加入卧底房间'}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="avalon-card p-5 flex flex-col gap-3">
+              <p className="section-label">创建房间</p>
+              <input
+                type="text"
+                placeholder="你的名字"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="input-glass"
+              />
+              <button
+                type="button"
+                onClick={handleCreateRoom}
+                disabled={loading}
+                className="min-h-[48px] btn-primary px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem]"
+              >
+                创建卧底房间
+              </button>
+            </div>
 
-        <div className="divider" />
+            <div className="divider" />
 
-        <div className="avalon-card p-5 flex flex-col gap-3">
-          <p className="section-label">加入房间</p>
-          <input
-            type="text"
-            placeholder="房间码（如 U8K2PQ）"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            className="input-glass font-mono uppercase tracking-widest"
-            maxLength={6}
-          />
-          <input
-            type="text"
-            placeholder="你的名字"
-            value={joinName}
-            onChange={(e) => setJoinName(e.target.value)}
-            className="input-glass"
-          />
-          <button
-            type="button"
-            onClick={handleJoinRoom}
-            disabled={loading}
-            className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
-          >
-            加入卧底房间
-          </button>
-        </div>
+            <div className="avalon-card p-5 flex flex-col gap-3">
+              <p className="section-label">加入房间</p>
+              <input
+                type="text"
+                placeholder="房间码（如 U8K2PQ）"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                className="input-glass font-mono uppercase tracking-widest"
+                maxLength={6}
+              />
+              <input
+                type="text"
+                placeholder="你的名字"
+                value={joinName}
+                onChange={(e) => setJoinName(e.target.value)}
+                className="input-glass"
+              />
+              <button
+                type="button"
+                onClick={handleJoinRoom}
+                disabled={loading}
+                className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
+              >
+                加入卧底房间
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

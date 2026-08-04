@@ -16,6 +16,16 @@
 5. Start in **test mode** for development (you can lock rules later), then **Enable**.
 6. Note your **Database URL** (e.g. `https://YOUR_PROJECT-default-rtdb.firebaseio.com` or `https://YOUR_PROJECT-default-rtdb.REGION.firebasedatabase.app`).
 
+## Enable Anonymous Auth (required)
+
+The app signs every client in anonymously so seats can bind to a stable `uid` and resume via `users/{uid}/activeGames`.
+
+1. In Firebase Console → **Build** → **Authentication**.
+2. Click **Get started** if needed.
+3. Open the **Sign-in method** tab.
+4. Enable **Anonymous**.
+5. Deploy database rules from `database.rules.json` (`firebase deploy --only database`) so room paths require `auth != null` and `users/$uid` is owner-only.
+
 ## Connect the app (for Task 7)
 
 1. In the project overview, click the **</>** (Web) icon to add an app.

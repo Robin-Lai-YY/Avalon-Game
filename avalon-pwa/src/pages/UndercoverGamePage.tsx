@@ -10,12 +10,15 @@ import {
 } from '../services/undercoverEngine'
 import type { UndercoverRole, UndercoverRoom } from '../types/undercover'
 import { UndercoverRulesSheet } from '../components/UndercoverRulesSheet'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadUndercoverSession } from '../utils/undercoverSessionStorage'
 
 type UndercoverGamePageProps = {
   roomId: string
   playerId: string
   onExit: () => void
   onReturnToLobby?: () => void
+  onSeatTakenOver?: () => void
 }
 
 function winnerLabel(winner: UndercoverRoom['resultWinner']) {
@@ -32,12 +35,26 @@ function roleLabel(role: UndercoverRole | '') {
   return '未知'
 }
 
-export function UndercoverGamePage({ roomId, playerId, onExit, onReturnToLobby }: UndercoverGamePageProps) {
+export function UndercoverGamePage({
+  roomId,
+  playerId,
+  onExit,
+  onReturnToLobby,
+  onSeatTakenOver,
+}: UndercoverGamePageProps) {
   const [room, setRoom] = useState<UndercoverRoom | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [wordRevealed, setWordRevealed] = useState(false)
+  const seatGeneration = loadUndercoverSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `undercoverRooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
   const [rulesOpen, setRulesOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)

@@ -12,6 +12,8 @@ import { LobbyRolePreview } from '../components/LobbyRolePreview'
 import { PlayerList } from '../components/PlayerList'
 import type { Player } from '../components/PlayerList'
 import { GameRulesSheet } from '../components/GameRulesSheet'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadSession } from '../utils/sessionStorage'
 
 type RoomData = {
   hostId: string
@@ -26,9 +28,17 @@ type LobbyPageProps = {
   onBack: () => void
   onRemovedFromLobby?: () => void
   onEnterRoleReveal?: () => void
+  onSeatTakenOver?: () => void
 }
 
-export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnterRoleReveal }: LobbyPageProps) {
+export function LobbyPage({
+  roomId,
+  playerId,
+  onBack,
+  onRemovedFromLobby,
+  onEnterRoleReveal,
+  onSeatTakenOver,
+}: LobbyPageProps) {
   const [room, setRoom] = useState<RoomData | null>(null)
   const [startError, setStartError] = useState('')
   const [starting, setStarting] = useState(false)
@@ -39,6 +49,14 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
   const [readyError, setReadyError] = useState('')
   const [rulesOpen, setRulesOpen] = useState(false)
   const wasInLobbyWithSelf = useRef(false)
+  const seatGeneration = loadSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `rooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `rooms/${roomId}`)
@@ -197,7 +215,7 @@ export function LobbyPage({ roomId, playerId, onBack, onRemovedFromLobby, onEnte
         {/* QR Code */}
         <div className="avalon-card p-4 inline-flex flex-col items-center self-start">
           <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?room=${roomId}` : '')}`}
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?game=avalon&room=${roomId}` : '')}`}
             alt="Scan to join room"
             width={120}
             height={120}

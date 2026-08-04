@@ -1,7 +1,10 @@
+import { isPlayerOffline } from '../services/presence'
+
 export type Player = {
   name: string
   ready: boolean
   role: string
+  lastSeen?: number
 }
 
 type PlayerListProps = {
@@ -11,6 +14,8 @@ type PlayerListProps = {
   viewerPlayerId?: string
   onKick?: (targetPlayerId: string) => void
   kickingId?: string | null
+  /** When true, show offline badge based on lastSeen. */
+  showPresence?: boolean
 }
 
 export function PlayerList({
@@ -20,6 +25,7 @@ export function PlayerList({
   viewerPlayerId,
   onKick,
   kickingId = null,
+  showPresence = true,
 }: PlayerListProps) {
   const ids = Object.keys(players ?? {}).sort()
   return (
@@ -28,6 +34,7 @@ export function PlayerList({
         const p = players[id]!
         const isSelf = viewerPlayerId != null && id === viewerPlayerId
         const showKickBtn = canKick && onKick && viewerPlayerId != null && id !== viewerPlayerId
+        const offline = showPresence && !isSelf && isPlayerOffline(p.lastSeen)
         return (
           <li
             key={id}
@@ -36,19 +43,29 @@ export function PlayerList({
             }`}
           >
             <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-              {/* Avatar circle */}
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                p.ready
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                  : 'bg-white/[0.04] text-slate-400 border border-white/[0.08]'
-              } transition-all duration-300`}>
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  p.ready
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                    : 'bg-white/[0.04] text-slate-400 border border-white/[0.08]'
+                } transition-all duration-300 ${offline ? 'opacity-50' : ''}`}
+              >
                 {p.ready ? '✓' : p.name.charAt(0).toUpperCase()}
               </div>
-              <span className="font-medium text-slate-200 truncate text-[0.9375rem]">{p.name}</span>
-              {hostId != null && id === hostId && (
-                <span className="badge-host">房主</span>
-              )}
+              <span
+                className={`font-medium truncate text-[0.9375rem] ${
+                  offline ? 'text-slate-500' : 'text-slate-200'
+                }`}
+              >
+                {p.name}
+              </span>
+              {hostId != null && id === hostId && <span className="badge-host">房主</span>}
               {isSelf && <span className="text-[0.6875rem] text-slate-500">（我）</span>}
+              {offline && (
+                <span className="text-[0.6875rem] rounded-md border border-slate-500/30 bg-slate-500/10 px-1.5 py-0.5 text-slate-400">
+                  离线
+                </span>
+              )}
             </div>
             {showKickBtn && (
               <button

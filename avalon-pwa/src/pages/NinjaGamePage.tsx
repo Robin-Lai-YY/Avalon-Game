@@ -35,12 +35,15 @@ import { NinjaRulesSheet } from '../components/NinjaRulesSheet'
 import { HouseCardLabel, NinjaCardView, ninjaKindLabel } from '../components/NinjaCardView'
 import { NinjaReactiveWindowView } from '../components/NinjaReactiveWindow'
 import { NinjaSeatTable } from '../components/NinjaSeatTable'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadNinjaSession } from '../utils/ninjaSessionStorage'
 
 type NinjaGamePageProps = {
   roomId: string
   playerId: string
   onExit: () => void
   onReturnToLobby?: () => void
+  onSeatTakenOver?: () => void
 }
 
 const PHASE_LABEL: Record<NinjaRoom['state'], string> = {
@@ -165,7 +168,13 @@ function getTargetableIdsForPending(room: NinjaRoom, playerId: string, pa: Pendi
   return aliveOthers
 }
 
-export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: NinjaGamePageProps) {
+export function NinjaGamePage({
+  roomId,
+  playerId,
+  onExit,
+  onReturnToLobby,
+  onSeatTakenOver,
+}: NinjaGamePageProps) {
   const [room, setRoom] = useState<NinjaRoom | null>(null)
   const [privateState, setPrivateState] = useState<NinjaPrivateRoundState | null>(null)
   const [error, setError] = useState('')
@@ -180,6 +189,14 @@ export function NinjaGamePage({ roomId, playerId, onExit, onReturnToLobby }: Nin
   const [phaseTransition, setPhaseTransition] = useState<{ state: NinjaRoom['state']; nonce: number } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const previousStateRef = useRef<NinjaRoom['state'] | null>(null)
+  const seatGeneration = loadNinjaSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `ninjaRooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `ninjaRooms/${roomId}`)

@@ -1,4 +1,16 @@
+import { useEffect, useState } from 'react'
+import {
+  activeGameKey,
+  GAME_LABELS,
+  subscribeActiveGames,
+  type ActiveGameEntry,
+} from '../services/activeGames'
+
 type GameHubPageProps = {
+  notice?: string
+  onClearNotice?: () => void
+  continueLoadingKey?: string | null
+  onContinueGame?: (entry: ActiveGameEntry) => void
   onEnterAvalon: () => void
   onEnterUndercover?: () => void
   onEnterLiarsDice?: () => void
@@ -6,11 +18,21 @@ type GameHubPageProps = {
 }
 
 export function GameHubPage({
+  notice,
+  onClearNotice,
+  continueLoadingKey,
+  onContinueGame,
   onEnterAvalon,
   onEnterUndercover,
   onEnterLiarsDice,
   onEnterNinja,
 }: GameHubPageProps) {
+  const [activeGames, setActiveGames] = useState<ActiveGameEntry[]>([])
+
+  useEffect(() => {
+    return subscribeActiveGames(setActiveGames)
+  }, [])
+
   return (
     <div className="min-h-dvh flex flex-col items-center px-5 pt-8 pb-12 animate-page-enter">
       <div className="w-full max-w-2xl">
@@ -19,6 +41,60 @@ export function GameHubPage({
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white/95">选择想玩的游戏</h1>
           <p className="mt-2 text-sm text-slate-400">和朋友一起开玩，马上开始下一局。</p>
         </div>
+
+        {notice && (
+          <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90 flex items-start justify-between gap-3">
+            <p>{notice}</p>
+            {onClearNotice && (
+              <button
+                type="button"
+                onClick={onClearNotice}
+                className="shrink-0 text-xs text-amber-200/80 underline-offset-2 hover:underline"
+              >
+                关闭
+              </button>
+            )}
+          </div>
+        )}
+
+        {activeGames.length > 0 && (
+          <section className="mb-6">
+            <p className="section-label mb-3">进行中的对局</p>
+            <ul className="space-y-2">
+              {activeGames.map((entry) => {
+                const key = activeGameKey(entry.game, entry.roomId)
+                const loading = continueLoadingKey === key
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      disabled={loading || !onContinueGame}
+                      onClick={() => onContinueGame?.(entry)}
+                      className="w-full text-left rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 transition-colors hover:bg-white/[0.07] active:scale-[0.99] disabled:opacity-60"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white/95">
+                            {GAME_LABELS[entry.game]}
+                            <span className="ml-2 font-mono text-xs text-slate-400 tracking-wider">
+                              {entry.roomId}
+                            </span>
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {entry.isHost ? '房主' : '玩家'} · 点此继续
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-emerald-500/15 border border-emerald-500/25 px-3 py-1.5 text-xs font-medium text-emerald-300">
+                          {loading ? '恢复中…' : '继续'}
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-children">
           <button

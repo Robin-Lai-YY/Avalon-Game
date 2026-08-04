@@ -4,6 +4,8 @@ import { db } from '../services/firebase'
 import { FantasySilhouette, roleToSilhouetteVariant } from '../components/visuals/FantasySilhouette'
 import { advanceToTeamSelection, getVisiblePlayerIds, isEvilRole } from '../services/gameEngine'
 import { ROLE_LABEL_ZH } from '../utils/roleLabels'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadSession } from '../utils/sessionStorage'
 
 type RoomData = {
   state: string
@@ -15,12 +17,21 @@ type RolePageProps = {
   roomId: string
   playerId: string
   onContinue: () => void
+  onSeatTakenOver?: () => void
 }
 
-export function RolePage({ roomId, playerId, onContinue }: RolePageProps) {
+export function RolePage({ roomId, playerId, onContinue, onSeatTakenOver }: RolePageProps) {
   const [room, setRoom] = useState<RoomData | null>(null)
   const [advancing, setAdvancing] = useState(false)
   const [revealed, setRevealed] = useState(false)
+  const seatGeneration = loadSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `rooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `rooms/${roomId}`)

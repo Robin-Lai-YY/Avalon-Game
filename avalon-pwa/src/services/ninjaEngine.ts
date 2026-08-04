@@ -7,7 +7,10 @@ import {
   HONOR_WIN_THRESHOLD,
 } from '../data/ninjaCards'
 import { shuffle } from '../utils/shuffle'
+import { clearActiveGame, clearActiveGameIfOwned, setActiveGame } from './activeGames'
+import { ensureAnonymousAuth } from './auth'
 import { db } from './firebase'
+import { findPlayerIdByName, isPlayerOffline, normalizePlayerName } from './presence'
 import type {
   HonorToken,
   HouseCard,
@@ -21,6 +24,26 @@ import type {
   ReactiveResponseChoice,
   TricksterVariant,
 } from '../types/ninja'
+
+function findPlayerIdByUid(players: Record<string, NinjaPlayer>, uid: string): string | null {
+  for (const [id, p] of Object.entries(players)) {
+    if (p?.uid === uid) return id
+  }
+  return null
+}
+
+async function syncNinjaSeat(
+  roomId: string,
+  playerId: string,
+  isHost: boolean,
+  uid: string,
+  existingUid?: string
+): Promise<void> {
+  const patch: Record<string, string | number> = { lastSeen: Date.now() }
+  if (!existingUid) patch.uid = uid
+  await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), patch)
+  await setActiveGame('ninja', roomId, playerId, isHost, uid)
+}
 
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ROOM_ID_LENGTH = 6
@@ -44,10 +67,6 @@ function generateReconnectToken(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-function normalizeNameForDuplicateCheck(name: string): string {
-  return name.trim().toLowerCase()
 }
 
 function randomInt(maxExclusive: number): number {
@@ -168,14 +187,36 @@ const NIGHT_PHASE_ORDER: NinjaRoom['state'][] = [
 // Room lifecycle: create, join, reconnect, kick, leave, ready, start
 // ============================================================================
 
+export type JoinNinjaResult =
+  | {
+      needsReclaim: true
+      candidatePlayerId: string
+      candidateName: string
+      offline: boolean
+      state: string
+      isHost: boolean
+    }
+  | {
+      needsReclaim?: false
+      playerId: string
+      reconnectToken: string
+      isHost: boolean
+      state: string
+      rejoined?: boolean
+      seatGeneration: number
+    }
+
 export async function createNinjaRoom(
   hostName: string
-): Promise<{ roomId: string; playerId: string; reconnectToken: string }> {
+): Promise<{ roomId: string; playerId: string; reconnectToken: string; seatGeneration: number }> {
+  const user = await ensureAnonymousAuth()
   const trimmed = hostName.trim()
   if (!trimmed) throw new Error('请输入你的名字')
   const roomId = generateRoomId()
   const playerId = generatePlayerId()
   const reconnectToken = generateReconnectToken()
+  const now = Date.now()
+  const seatGeneration = 0
 
   const room: NinjaRoom = {
     hostId: playerId,
@@ -187,6 +228,9 @@ export async function createNinjaRoom(
         name: trimmed,
         ready: false,
         reconnectToken,
+        uid: user.uid,
+        lastSeen: now,
+        seatGeneration,
         honorTokens: [],
         ...DEFAULT_PLAYER_FIELDS,
       },
@@ -205,13 +249,15 @@ export async function createNinjaRoom(
   }
 
   await set(ref(db, `ninjaRooms/${roomId}`), room)
-  return { roomId, playerId, reconnectToken }
+  await setActiveGame('ninja', roomId, playerId, true, user.uid)
+  return { roomId, playerId, reconnectToken, seatGeneration }
 }
 
 export async function joinNinjaRoom(
   roomId: string,
   name: string
-): Promise<{ playerId: string; reconnectToken: string }> {
+): Promise<JoinNinjaResult> {
+  const user = await ensureAnonymousAuth()
   const trimmed = name.trim()
   if (!trimmed) throw new Error('请输入你的名字')
 
@@ -219,15 +265,39 @@ export async function joinNinjaRoom(
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) throw new Error('Room not found')
   const room = snapshot.val() as NinjaRoom
-  if (room.state !== 'LOBBY') throw new Error('Game has already started')
-
-  const incoming = normalizeNameForDuplicateCheck(trimmed)
   const players = room.players ?? {}
-  for (const p of Object.values(players)) {
-    if (normalizeNameForDuplicateCheck(p.name) === incoming) {
-      throw new Error('该昵称已被使用，请换一个名字')
+
+  const existingId = findPlayerIdByUid(players, user.uid)
+  if (existingId) {
+    const seat = players[existingId]!
+    const isHost = room.hostId === existingId
+    await syncNinjaSeat(roomId, existingId, isHost, user.uid, seat.uid)
+    return {
+      playerId: existingId,
+      reconnectToken: seat.reconnectToken,
+      isHost,
+      state: room.state,
+      rejoined: true,
+      seatGeneration: Number(seat.seatGeneration) || 0,
     }
   }
+
+  if (!normalizePlayerName(trimmed)) throw new Error('请输入你的名字')
+
+  const nameMatchId = findPlayerIdByName(players, trimmed)
+  if (nameMatchId) {
+    const seat = players[nameMatchId]!
+    return {
+      needsReclaim: true,
+      candidatePlayerId: nameMatchId,
+      candidateName: seat.name?.trim() || trimmed,
+      offline: isPlayerOffline(seat.lastSeen),
+      state: room.state,
+      isHost: room.hostId === nameMatchId,
+    }
+  }
+
+  if (room.state !== 'LOBBY') throw new Error('Game has already started')
 
   const currentCount = Object.keys(players).length
   const targetCount = room.targetPlayerCount ?? MAX_NINJA_SEATS
@@ -235,37 +305,139 @@ export async function joinNinjaRoom(
 
   const playerId = generatePlayerId()
   const reconnectToken = generateReconnectToken()
+  const now = Date.now()
+  const seatGeneration = 0
   await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), {
     name: trimmed,
     ready: false,
     reconnectToken,
+    uid: user.uid,
+    lastSeen: now,
+    seatGeneration,
     honorTokens: [],
     ...DEFAULT_PLAYER_FIELDS,
   } as NinjaPlayer)
 
-  return { playerId, reconnectToken }
+  await setActiveGame('ninja', roomId, playerId, false, user.uid)
+  return {
+    playerId,
+    reconnectToken,
+    isHost: false,
+    state: 'LOBBY',
+    seatGeneration,
+  }
+}
+
+export async function reclaimNinjaSeatByName(
+  roomId: string,
+  name: string,
+  options?: { force?: boolean }
+): Promise<{
+  playerId: string
+  reconnectToken: string
+  isHost: boolean
+  state: string
+  seatGeneration: number
+}> {
+  const force = options?.force === true
+  const user = await ensureAnonymousAuth()
+  const snapshot = await get(ref(db, `ninjaRooms/${roomId}`))
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val() as NinjaRoom
+  const players = room.players ?? {}
+  const playerId = findPlayerIdByName(players, name)
+  if (!playerId) throw new Error('未找到同名座位')
+  const seat = players[playerId]!
+  if (!force && !isPlayerOffline(seat.lastSeen)) {
+    throw new Error('SEAT_ONLINE_CONFIRM')
+  }
+  const newToken = generateReconnectToken()
+  const nextGen = (Number(seat.seatGeneration) || 0) + 1
+  const isHost = room.hostId === playerId
+  await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), {
+    uid: user.uid,
+    reconnectToken: newToken,
+    seatGeneration: nextGen,
+    lastSeen: Date.now(),
+  })
+  if (room.state === 'GAME_END') {
+    await clearActiveGame('ninja', roomId, user.uid)
+  } else {
+    await setActiveGame('ninja', roomId, playerId, isHost, user.uid)
+  }
+  return {
+    playerId,
+    reconnectToken: newToken,
+    isHost,
+    state: room.state,
+    seatGeneration: nextGen,
+  }
 }
 
 export async function reconnectNinjaRoom(
   roomId: string,
   playerId: string
-): Promise<{ roomId: string; playerId: string; isHost: boolean; state: string }> {
+): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+  reconnectToken?: string
+  seatGeneration: number
+}> {
+  const user = await ensureAnonymousAuth()
   const snapshot = await get(ref(db, `ninjaRooms/${roomId}`))
   if (!snapshot.exists()) throw new Error('Room not found')
   const room = snapshot.val() as NinjaRoom
   if (!room.players?.[playerId]) throw new Error('You are not in this room')
+  const isHost = room.hostId === playerId
+  const seatGeneration = Number(room.players[playerId]?.seatGeneration) || 0
+  if (room.state === 'GAME_END') {
+    await clearActiveGame('ninja', roomId, user.uid)
+  } else {
+    await syncNinjaSeat(roomId, playerId, isHost, user.uid, room.players[playerId]?.uid)
+  }
   return {
     roomId,
     playerId,
-    isHost: room.hostId === playerId,
+    isHost,
     state: room.state,
+    reconnectToken: room.players[playerId]?.reconnectToken,
+    seatGeneration,
   }
+}
+
+export async function reconnectNinjaByUid(
+  roomId: string
+): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+  reconnectToken?: string
+  seatGeneration: number
+}> {
+  const user = await ensureAnonymousAuth()
+  const snapshot = await get(ref(db, `ninjaRooms/${roomId}`))
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val() as NinjaRoom
+  const playerId = findPlayerIdByUid(room.players ?? {}, user.uid)
+  if (!playerId) throw new Error('You are not in this room')
+  return reconnectNinjaRoom(roomId, playerId)
 }
 
 export async function reconnectNinjaByToken(
   roomId: string,
   token: string
-): Promise<{ roomId: string; playerId: string; isHost: boolean; state: string; reconnectToken: string }> {
+): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+  reconnectToken: string
+  seatGeneration: number
+}> {
+  const user = await ensureAnonymousAuth()
   const roomRef = ref(db, `ninjaRooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) throw new Error('Room not found')
@@ -280,13 +452,26 @@ export async function reconnectNinjaByToken(
   }
   if (!matchedId) throw new Error('Invalid or expired reconnect token')
   const newToken = generateReconnectToken()
-  await set(ref(db, `ninjaRooms/${roomId}/players/${matchedId}/reconnectToken`), newToken)
+  const isHost = room.hostId === matchedId
+  const nextGen = (Number(players[matchedId]?.seatGeneration) || 0) + 1
+  await update(ref(db, `ninjaRooms/${roomId}/players/${matchedId}`), {
+    reconnectToken: newToken,
+    uid: user.uid,
+    lastSeen: Date.now(),
+    seatGeneration: nextGen,
+  })
+  if (room.state === 'GAME_END') {
+    await clearActiveGame('ninja', roomId, user.uid)
+  } else {
+    await setActiveGame('ninja', roomId, matchedId, isHost, user.uid)
+  }
   return {
     roomId,
     playerId: matchedId,
-    isHost: room.hostId === matchedId,
+    isHost,
     state: room.state,
     reconnectToken: newToken,
+    seatGeneration: nextGen,
   }
 }
 
@@ -304,6 +489,7 @@ export async function kickPlayerFromNinjaLobby(
   if (room.hostId !== hostPlayerId) throw new Error('只有房主可以踢人')
   const players = room.players ?? {}
   if (!players[targetPlayerId]) throw new Error('该玩家不在房间中')
+  const targetUid = players[targetPlayerId]?.uid
   const currentCount = Object.keys(players).length
   const targetCount = room.targetPlayerCount ?? MAX_NINJA_SEATS
   const remainingPlayers = Object.fromEntries(
@@ -330,19 +516,30 @@ export async function kickPlayerFromNinjaLobby(
     seatAssignments: nextSeatAssignments,
     seatOrder: buildSeatOrderFromAssignments(remainingPlayers, nextSeatAssignments),
   })
+  if (targetUid) {
+    await clearActiveGame('ninja', roomId, targetUid)
+  }
 }
 
 export async function leaveNinjaLobby(roomId: string, playerId: string): Promise<void> {
   const roomRef = ref(db, `ninjaRooms/${roomId}`)
   const snapshot = await get(roomRef)
-  if (!snapshot.exists()) return
+  if (!snapshot.exists()) {
+    await clearActiveGameIfOwned('ninja', roomId, playerId)
+    return
+  }
   const room = snapshot.val() as NinjaRoom
   if (room.state !== 'LOBBY') return
   const players = room.players ?? {}
-  if (!players[playerId]) return
+  if (!players[playerId]) {
+    await clearActiveGameIfOwned('ninja', roomId, playerId)
+    return
+  }
+  const leaverUid = players[playerId]?.uid
   const ids = getSeatOrder(room)
   if (ids.length === 1) {
     await remove(roomRef)
+    await clearActiveGame('ninja', roomId, leaverUid)
     return
   }
   const nextSeatAssignments = { ...(room.seatAssignments ?? {}) }
@@ -359,9 +556,11 @@ export async function leaveNinjaLobby(roomId: string, playerId: string): Promise
       seatOrder: nextSeatOrder,
       ...(nextHost ? { hostId: nextHost } : {}),
     })
+    await clearActiveGame('ninja', roomId, leaverUid)
     return
   }
   await update(roomRef, { [`players/${playerId}`]: null, [`seatAssignments/${playerId}`]: null, seatOrder: nextSeatOrder })
+  await clearActiveGame('ninja', roomId, leaverUid)
 }
 
 export async function sitNinjaSeat(roomId: string, playerId: string, seatIndex: number): Promise<void> {
