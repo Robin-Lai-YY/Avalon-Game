@@ -37,36 +37,36 @@ export const NINJA_CARD_DEFS: NinjaCardDef[] = [
   { kind: 'mystic', variant: null, priority: 5, name: '隐士 5', text: '指定一名玩家，秘密查看其流派牌，并随机查看其手中 1 张忍者牌。', count: 1 },
   { kind: 'mystic', variant: null, priority: 6, name: '隐士 6', text: '指定一名玩家，秘密查看其流派牌，并随机查看其手中 1 张忍者牌。', count: 1 },
 
-  // Trickster phase — 6 unique variants, priorities 1..6.
-  { kind: 'trickster', variant: 'gravedigger', priority: 1, name: '盗墓者', text: '从弃牌堆中查看 2 张被弃的忍者牌，挑 1 张加入手牌；可立即按其阶段打出，或保留至本回合后续阶段。', count: 1 },
-  { kind: 'trickster', variant: 'shapeshifter', priority: 2, name: '变形者', text: '查看任意两名玩家（可包含自己）的流派牌，可选择是否秘密交换两人的流派牌；被涉及的两人之后不可再自由查看自己的流派牌。', count: 1 },
-  { kind: 'trickster', variant: 'spirit_merchant', priority: 3, name: '灵商', text: '查看一名玩家的 1 个荣誉标记或其流派牌；之后可选择交换：将你任一标记给该玩家，并从其手中取走任一标记。', count: 1 },
-  { kind: 'trickster', variant: 'thief', priority: 4, name: '盗贼', text: '公开自己的流派牌；从荣誉标记数量比你多的玩家中选 1 人，随机偷取其 1 个荣誉标记。若无人比你多则无效。', count: 1 },
+  // Trickster phase — official order: Shapeshifter 1, Gravedigger 2, …
+  { kind: 'trickster', variant: 'shapeshifter', priority: 1, name: '变形者', text: '查看任意两名玩家（可包含自己）的流派牌，可选择是否秘密交换两人的流派牌；被涉及的两人之后不可再自由查看自己的流派牌。', count: 1 },
+  { kind: 'trickster', variant: 'gravedigger', priority: 2, name: '盗墓者', text: '从弃牌堆中查看最多 2 张被弃的忍者牌，必须挑 1 张；可立即打出（可越阶段），或保留至本回合对应阶段。', count: 1 },
+  { kind: 'trickster', variant: 'spirit_merchant', priority: 3, name: '灵商', text: '查看一名玩家的 1 个荣誉标记或其流派牌；之后可选择交换：将你任一标记给该玩家，并从其手中取走任一标记。若你没有标记则只能查看。', count: 1 },
+  { kind: 'trickster', variant: 'thief', priority: 4, name: '盗贼', text: '公开自己的流派牌；从荣誉标记数量比你多的玩家中选 1 人，随机偷取其 1 个荣誉标记。若无人比你多则仍公开身份，偷取无效。', count: 1 },
   { kind: 'trickster', variant: 'troublemaker', priority: 5, name: '麻烦制造者', text: '指定一名玩家，秘密查看其流派牌；之后可选择是否将其流派牌当众揭示。', count: 1 },
   { kind: 'trickster', variant: 'judgement', priority: 6, name: '审判', text: '公开自己的流派牌，然后击杀一名玩家。还施僧与殉道者无法响应此击杀。', count: 1 },
 
   // Blind Assassin — direct kill, can be countered. 6 cards.
-  { kind: 'blind_assassin', variant: null, priority: 1, name: '盲眼刺客 1', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'blind_assassin', variant: null, priority: 2, name: '盲眼刺客 2', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'blind_assassin', variant: null, priority: 3, name: '盲眼刺客 3', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'blind_assassin', variant: null, priority: 4, name: '盲眼刺客 4', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'blind_assassin', variant: null, priority: 5, name: '盲眼刺客 5', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'blind_assassin', variant: null, priority: 6, name: '盲眼刺客 6', text: '指定一名玩家，直接将其暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 1, name: '盲眼刺客 1', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 2, name: '盲眼刺客 2', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 3, name: '盲眼刺客 3', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 4, name: '盲眼刺客 4', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 5, name: '盲眼刺客 5', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'blind_assassin', variant: null, priority: 6, name: '盲眼刺客 6', text: '指定一名其他玩家，直接将其暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
 
-  // Shinobi — peek then choose to kill. 6 cards.
-  { kind: 'shinobi', variant: null, priority: 1, name: '上忍 1', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'shinobi', variant: null, priority: 2, name: '上忍 2', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'shinobi', variant: null, priority: 3, name: '上忍 3', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'shinobi', variant: null, priority: 4, name: '上忍 4', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'shinobi', variant: null, priority: 5, name: '上忍 5', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
-  { kind: 'shinobi', variant: null, priority: 6, name: '上忍 6', text: '指定一名玩家，秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者代死）。', count: 1 },
+  // Shinobi — peek then choose to kill (may target self). 6 cards.
+  { kind: 'shinobi', variant: null, priority: 1, name: '上忍 1', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'shinobi', variant: null, priority: 2, name: '上忍 2', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'shinobi', variant: null, priority: 3, name: '上忍 3', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'shinobi', variant: null, priority: 4, name: '上忍 4', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'shinobi', variant: null, priority: 5, name: '上忍 5', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
+  { kind: 'shinobi', variant: null, priority: 6, name: '上忍 6', text: '指定一名玩家（可含自己），秘密查看其流派牌后决定是否暗杀（可被还施僧反弹或殉道者护己）。', count: 1 },
 
   // Reactive cards — held outside phase order, played on assassination triggers.
   { kind: 'mirror_monk', variant: null, priority: 1, name: '还施僧', text: '当你被盲眼刺客或上忍指定为暗杀目标时打出：暗杀反弹至攻击者，你不会死亡。', count: 1 },
-  { kind: 'martyr', variant: null, priority: 2, name: '殉道者', text: '当其他玩家被盲眼刺客或上忍暗杀时打出：你代替其死亡，原目标存活。', count: 1 },
+  { kind: 'martyr', variant: null, priority: 2, name: '殉道者', text: '当你被盲眼刺客或上忍指定为暗杀目标时打出：你不会死亡，并获得 1 枚荣誉标记。', count: 1 },
 
-  // Mastermind — reveal at end of night; if alive, this player's house wins the round.
-  { kind: 'mastermind', variant: null, priority: 1, name: '首脑', text: '夜晚结束时若你仍存活，公开此牌：你的流派赢得本回合。若你是浪人，则仅浪人因存活获得荣誉标记。', count: 1 },
+  // Mastermind — auto-revealed at end of night if alive.
+  { kind: 'mastermind', variant: null, priority: 1, name: '首脑', text: '夜晚结束时若你仍存活，自动公开此牌：你的流派赢得本回合。若你是浪人，则仅浪人因存活获得荣誉标记。', count: 1 },
 ]
 
 /** Asserts at module-load that the configured deck still totals 33 cards. */

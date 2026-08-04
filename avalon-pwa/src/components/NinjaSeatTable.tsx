@@ -95,8 +95,14 @@ export function NinjaSeatTable({
         const isActive = id === activePlayerId
         const canTarget = !!id && targetableIds.includes(id)
         const isSelected = !!id && selectedTargetIds.includes(id)
-        const revealed = !!id && (room.publiclyRevealedHouseIds ?? []).includes(id)
-        const houseCard = id ? room.houseCardAssignments?.[id] ?? null : null
+        const revealedHouse = id
+          ? (room.publiclyRevealedHouses?.[id] ??
+            ((room.publiclyRevealedHouseIds ?? []).includes(id)
+              ? room.houseCardAssignments?.[id] ?? null
+              : null))
+          : null
+        const revealed = !!revealedHouse
+        const houseCard = revealedHouse
         const lobbySeatAllowed = mode === 'lobby' && !player && viewerCanMove
         const clickable = mode === 'lobby' ? lobbySeatAllowed && !!onSeatClick : canTarget && !!onTargetClick
         const tokenCount = id ? honorTokenCount(room, id) : 0

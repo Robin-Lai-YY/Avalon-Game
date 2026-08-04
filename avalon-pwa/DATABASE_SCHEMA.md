@@ -60,24 +60,31 @@ ninjaRooms
      ├ hostId                 (string)
      ├ state                  (string) – LOBBY | HOUSE_REVEAL | DRAFT_PICK_1 | DRAFT_PICK_2 |
      │                                    NIGHT_SPY | NIGHT_MYSTIC | NIGHT_TRICKSTER |
-     │                                    NIGHT_BLIND_ASSASSIN | NIGHT_SHINOBI | NIGHT_MASTERMIND |
+     │                                    NIGHT_BLIND_ASSASSIN | NIGHT_SHINOBI |
      │                                    REVEAL | GAME_END
+     │                                    (NIGHT_MASTERMIND deprecated — auto-reveal at end of shinobi)
      ├ round                  (number)
      ├ targetPlayerCount      (number) – host-selected player count for the next game, 4-11
      ├ players                (object) – { [playerId]: NinjaPlayer }
      ├ seatOrder              (array)  – clockwise seated player ids frozen at game start; drives draft passing and tie-breaks
      ├ seatAssignments        (object) – { [playerId]: seatIndex } lobby seat positions (0-10)
      ├ houseCardAssignments   (object) – { [playerId]: HouseCard }
-     ├ publiclyRevealedHouseIds (array) – house cards publicly exposed this round
+     ├ publiclyRevealedHouses (object) – { [playerId]: HouseCard } snapshot of public reveals this round
+     ├ publiclyRevealedHouseIds (array) – legacy keys synced from publiclyRevealedHouses
+     ├ publicNightLog         (array)  – chronological public night actions this round
      ├ tokenBag               (array)  – remaining honor tokens (shuffled at game start)
      ├ ninjaDiscardPile       (array)  – cards discarded this game
-     ├ currentNight           (object?) – per-phase resolution state with pendingAction / reactive window
-     ├ mastermindRevealedAliveIds (array) – alive Mastermind owners that block normal scoring
+     ├ currentNight           (object?) – phaseAckIds, resolutionQueue, pendingAction, reactive
+     ├ mastermindRevealedAliveIds (array) – alive Mastermind owners auto-revealed at end of night
      ├ reveal                 (object?) – per-round reveal summary
      ├ resultWinnerIds        (array?)  – set on GAME_END
      ├ serverTimeOffset       (number) – reserved for client clock offset / timed windows
      └ privateState           (object) – { [playerId]: { current: NinjaPrivateRoundState } }
 ```
+
+`currentNight.phaseAckIds` tracks alive players who confirmed a phase with no matching cards.
+Holders of matching cards become ready by filling `players.*.nightChoices` for those cards.
+Declarations lock only when every alive player is ready; progress UI must not expose holder counts.
 
 `seatAssignments` stores the lobby table position. Players may choose any empty seat before
 readying; once ready, their seat is locked. At game start, `seatOrder` is derived from

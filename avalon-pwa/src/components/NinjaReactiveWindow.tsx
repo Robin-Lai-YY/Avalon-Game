@@ -70,7 +70,7 @@ export function NinjaReactiveWindowView({
               onClick={onMartyr}
               className="min-h-[44px] rounded-xl bg-pink-500/20 border border-pink-400/40 text-pink-100 font-semibold disabled:opacity-50"
             >
-              打出殉道者（替死）
+              打出殉道者（保命 + 荣誉标记）
             </button>
           )}
           <button
@@ -92,7 +92,7 @@ export function NinjaReactiveWindowView({
 
       {myResponse && (
         <p className="text-xs text-red-200/80 mt-2">
-          已选择：{myResponse === 'monk' ? '还施僧' : myResponse === 'martyr' ? '殉道者' : '放弃'}
+          已选择：{myResponse === 'monk' ? '还施僧' : myResponse === 'martyr' ? '殉道者（护己）' : '放弃'}
         </p>
       )}
     </div>
