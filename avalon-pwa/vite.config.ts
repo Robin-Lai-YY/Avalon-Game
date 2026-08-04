@@ -12,9 +12,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: '谁是真的派西维尔?',
-        short_name: '派西维尔',
-        description: '阿瓦隆组队与任务助手',
+        name: '游戏大厅',
+        short_name: '游戏大厅',
+        description: '多人派对游戏大厅',
         theme_color: '#060814',
         background_color: '#060814',
         display: 'standalone',

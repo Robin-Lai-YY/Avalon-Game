@@ -228,7 +228,7 @@ export function HomePage({
               <div className="relative w-full aspect-[2/1] max-h-[min(44vh,340px)]">
                 <img
                   src={coverSrc}
-                  alt="谁是真的派西维尔?"
+                  alt="游戏大厅"
                   className="hero-cover-img absolute inset-0 h-full w-full object-cover object-center"
                   width={1024}
                   height={512}
@@ -245,7 +245,7 @@ export function HomePage({
 
           <div className="text-center mb-8 animate-slide-up px-1" style={{ animationDelay: '100ms' }}>
             <h1 className="text-[1.65rem] sm:text-4xl font-bold tracking-tight text-white/95 leading-snug">
-              谁是真的派西维尔?
+              游戏大厅
             </h1>
           </div>
         </>
