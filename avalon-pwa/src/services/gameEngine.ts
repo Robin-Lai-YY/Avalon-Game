@@ -1,7 +1,40 @@
 import { get, ref, remove, set, update } from 'firebase/database'
+import { clearActiveGame, clearActiveGameIfOwned, setActiveGame } from './activeGames.ts'
+import { ensureAnonymousAuth } from './auth.ts'
 import { db } from './firebase.ts'
+import { findPlayerIdByName, isPlayerOffline, normalizePlayerName } from './presence.ts'
 import { getMissionTeamSize, isDoubleFailRound } from '../utils/missionRules.ts'
 import { shuffle } from '../utils/shuffle.ts'
+
+type PlayerNode = {
+  name?: string
+  ready?: boolean
+  role?: string
+  reconnectToken?: string
+  uid?: string
+  lastSeen?: number
+  seatGeneration?: number
+}
+
+function findPlayerIdByUid(players: Record<string, PlayerNode>, uid: string): string | null {
+  for (const [id, p] of Object.entries(players)) {
+    if (p?.uid === uid) return id
+  }
+  return null
+}
+
+async function syncAvalonSeat(
+  roomId: string,
+  playerId: string,
+  isHost: boolean,
+  uid: string,
+  existingUid?: string
+): Promise<void> {
+  const patch: Record<string, string | number> = { lastSeen: Date.now() }
+  if (!existingUid) patch.uid = uid
+  await update(ref(db, `rooms/${roomId}/players/${playerId}`), patch)
+  await setActiveGame('avalon', roomId, playerId, isHost, uid)
+}
 
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ROOM_ID_LENGTH = 6
@@ -28,11 +61,6 @@ function generateReconnectToken(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** Compare lobby display names for duplicate check (trim + case-insensitive). */
-function normalizeNameForDuplicateCheck(name: string): string {
-  return name.trim().toLowerCase()
 }
 
 const GOOD_ROLE_TEMPLATES: Record<number, string[]> = {
@@ -77,12 +105,16 @@ export function generateRoles(playerCount: number): string[] {
 /**
  * Creates a new room and writes initial state to Firebase.
  * Caller is the host and is added as the first player.
- * @returns { roomId, hostId }
  */
-export async function createRoom(hostName: string): Promise<{ roomId: string; hostId: string; reconnectToken: string }> {
+export async function createRoom(
+  hostName: string
+): Promise<{ roomId: string; hostId: string; reconnectToken: string; seatGeneration: number }> {
+  const user = await ensureAnonymousAuth()
   const roomId = generateRoomId()
   const hostId = generateHostId()
   const reconnectToken = generateReconnectToken()
+  const now = Date.now()
+  const seatGeneration = 0
 
   const roomRef = ref(db, `rooms/${roomId}`)
   await set(roomRef, {
@@ -96,6 +128,9 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
         ready: false,
         role: '',
         reconnectToken,
+        uid: user.uid,
+        lastSeen: now,
+        seatGeneration,
       },
     },
     roles: {},
@@ -110,47 +145,155 @@ export async function createRoom(hostName: string): Promise<{ roomId: string; ho
     consecutiveRejects: 0,
   })
 
-  return { roomId, hostId, reconnectToken }
+  await setActiveGame('avalon', roomId, hostId, true, user.uid)
+  return { roomId, hostId, reconnectToken, seatGeneration }
 }
 
+export type JoinRoomResult =
+  | {
+      needsReclaim: true
+      candidatePlayerId: string
+      candidateName: string
+      offline: boolean
+      state: string
+      isHost: boolean
+    }
+  | {
+      needsReclaim?: false
+      playerId: string
+      reconnectToken: string
+      isHost: boolean
+      state: string
+      rejoined?: boolean
+      seatGeneration: number
+    }
+
 /**
- * Joins an existing room as a new player. Room must exist and be in LOBBY.
- * @returns { playerId } so the client can identify themselves (e.g. for ready toggle).
- * @throws if room does not exist or state is not LOBBY.
+ * Joins an existing room as a new player, or signals nickname reclaim when a same-name seat exists.
  */
-export async function joinRoom(
-  roomId: string,
-  name: string
-): Promise<{ playerId: string; reconnectToken: string }> {
+export async function joinRoom(roomId: string, name: string): Promise<JoinRoomResult> {
+  const user = await ensureAnonymousAuth()
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) {
     throw new Error('Room not found')
   }
   const room = snapshot.val()
-  if (room.state !== 'LOBBY') {
-    throw new Error('Game has already started')
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
+
+  const existingId = findPlayerIdByUid(players, user.uid)
+  if (existingId) {
+    const seat = players[existingId]!
+    const isHost = room.hostId === existingId
+    await syncAvalonSeat(roomId, existingId, isHost, user.uid, seat.uid)
+    return {
+      playerId: existingId,
+      reconnectToken: seat.reconnectToken ?? generateReconnectToken(),
+      isHost,
+      state: room.state ?? 'LOBBY',
+      rejoined: true,
+      seatGeneration: Number(seat.seatGeneration) || 0,
+    }
   }
-  const incoming = normalizeNameForDuplicateCheck(name)
+
+  const incoming = normalizePlayerName(name)
   if (incoming === '') {
     throw new Error('Enter your name')
   }
-  const players = room.players ?? {}
-  for (const p of Object.values(players) as Array<{ name?: string }>) {
-    if (normalizeNameForDuplicateCheck(p?.name ?? '') === incoming) {
-      throw new Error('该昵称已被使用，请换一个名字')
+
+  const nameMatchId = findPlayerIdByName(players, name)
+  if (nameMatchId) {
+    const seat = players[nameMatchId]!
+    return {
+      needsReclaim: true,
+      candidatePlayerId: nameMatchId,
+      candidateName: seat.name?.trim() || name.trim(),
+      offline: isPlayerOffline(seat.lastSeen),
+      state: room.state ?? 'LOBBY',
+      isHost: room.hostId === nameMatchId,
     }
   }
+
+  if (room.state !== 'LOBBY') {
+    throw new Error('Game has already started')
+  }
+
   const playerId = generatePlayerId()
   const reconnectToken = generateReconnectToken()
+  const now = Date.now()
+  const seatGeneration = 0
   const playerRef = ref(db, `rooms/${roomId}/players/${playerId}`)
   await set(playerRef, {
     name: name.trim(),
     ready: false,
     role: '',
     reconnectToken,
+    uid: user.uid,
+    lastSeen: now,
+    seatGeneration,
   })
-  return { playerId, reconnectToken }
+  await setActiveGame('avalon', roomId, playerId, false, user.uid)
+  return {
+    playerId,
+    reconnectToken,
+    isHost: false,
+    state: 'LOBBY',
+    seatGeneration,
+  }
+}
+
+/**
+ * Claim an existing seat by matching display name (WeChat re-scan path).
+ * When force is false and the seat still looks online, returns needsConfirm via throw message.
+ */
+export async function reclaimSeatByName(
+  roomId: string,
+  name: string,
+  options?: { force?: boolean }
+): Promise<{
+  playerId: string
+  reconnectToken: string
+  isHost: boolean
+  state: string
+  seatGeneration: number
+}> {
+  const force = options?.force === true
+  const user = await ensureAnonymousAuth()
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) throw new Error('Room not found')
+  const room = snapshot.val()
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
+  const playerId = findPlayerIdByName(players, name)
+  if (!playerId) throw new Error('未找到同名座位')
+  const seat = players[playerId]!
+  const offline = isPlayerOffline(seat.lastSeen)
+  if (!force && !offline) {
+    throw new Error('SEAT_ONLINE_CONFIRM')
+  }
+  const newToken = generateReconnectToken()
+  const nextGen = (Number(seat.seatGeneration) || 0) + 1
+  const now = Date.now()
+  const isHost = room.hostId === playerId
+  await update(ref(db, `rooms/${roomId}/players/${playerId}`), {
+    uid: user.uid,
+    reconnectToken: newToken,
+    seatGeneration: nextGen,
+    lastSeen: now,
+  })
+  const state = room.state ?? 'LOBBY'
+  if (state === 'GAME_END') {
+    await clearActiveGame('avalon', roomId, user.uid)
+  } else {
+    await setActiveGame('avalon', roomId, playerId, isHost, user.uid)
+  }
+  return {
+    playerId,
+    reconnectToken: newToken,
+    isHost,
+    state,
+    seatGeneration: nextGen,
+  }
 }
 
 /**
@@ -160,14 +303,22 @@ export async function joinRoom(
 export async function leaveLobby(roomId: string, playerId: string): Promise<void> {
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
-  if (!snapshot.exists()) return
+  if (!snapshot.exists()) {
+    await clearActiveGameIfOwned('avalon', roomId, playerId)
+    return
+  }
   const room = snapshot.val()
   if (room.state !== 'LOBBY') return
-  const players = room.players ?? {}
-  if (!players[playerId]) return
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
+  if (!players[playerId]) {
+    await clearActiveGameIfOwned('avalon', roomId, playerId)
+    return
+  }
+  const leaverUid = players[playerId]?.uid
   const playerIds = Object.keys(players).sort()
   if (playerIds.length === 1) {
     await remove(roomRef)
+    await clearActiveGame('avalon', roomId, leaverUid)
     return
   }
   const playerNodeRef = ref(db, `rooms/${roomId}/players/${playerId}`)
@@ -179,6 +330,7 @@ export async function leaveLobby(roomId: string, playerId: string): Promise<void
       await update(roomRef, { hostId: newHostId })
     }
   }
+  await clearActiveGame('avalon', roomId, leaverUid)
 }
 
 /**
@@ -198,10 +350,14 @@ export async function kickPlayerFromLobby(
   const room = snapshot.val()
   if (room.state !== 'LOBBY') throw new Error('只能在等待大厅踢人')
   if (room.hostId !== hostPlayerId) throw new Error('只有房主可以踢人')
-  const players = room.players ?? {}
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
   if (!players[targetPlayerId]) throw new Error('该玩家不在房间中')
+  const targetUid = players[targetPlayerId]?.uid
   const playerRef = ref(db, `rooms/${roomId}/players/${targetPlayerId}`)
   await remove(playerRef)
+  if (targetUid) {
+    await clearActiveGame('avalon', roomId, targetUid)
+  }
 }
 
 /**
@@ -213,23 +369,62 @@ export async function reconnectRoom(roomId: string, playerId: string): Promise<{
   playerId: string
   isHost: boolean
   state: string
+  reconnectToken?: string
+  seatGeneration: number
 }> {
+  const user = await ensureAnonymousAuth()
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) {
     throw new Error('Room not found')
   }
   const room = snapshot.val()
-  const players = room.players ?? {}
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
   if (!players[playerId]) {
     throw new Error('You are not in this room')
+  }
+  const isHost = room.hostId === playerId
+  const state = room.state ?? 'LOBBY'
+  const seatGeneration = Number(players[playerId]?.seatGeneration) || 0
+  if (state === 'GAME_END') {
+    await clearActiveGame('avalon', roomId, user.uid)
+  } else {
+    await syncAvalonSeat(roomId, playerId, isHost, user.uid, players[playerId]?.uid)
   }
   return {
     roomId,
     playerId,
-    isHost: room.hostId === playerId,
-    state: room.state ?? 'LOBBY',
+    isHost,
+    state,
+    reconnectToken: players[playerId]?.reconnectToken,
+    seatGeneration,
   }
+}
+
+/**
+ * Reconnect by matching the current Auth uid to a player seat.
+ */
+export async function reconnectByUid(roomId: string): Promise<{
+  roomId: string
+  playerId: string
+  isHost: boolean
+  state: string
+  reconnectToken?: string
+  seatGeneration: number
+}> {
+  const user = await ensureAnonymousAuth()
+  const roomRef = ref(db, `rooms/${roomId}`)
+  const snapshot = await get(roomRef)
+  if (!snapshot.exists()) {
+    throw new Error('Room not found')
+  }
+  const room = snapshot.val()
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
+  const playerId = findPlayerIdByUid(players, user.uid)
+  if (!playerId) {
+    throw new Error('You are not in this room')
+  }
+  return reconnectRoom(roomId, playerId)
 }
 
 /**
@@ -242,16 +437,18 @@ export async function reconnectByToken(roomId: string, token: string): Promise<{
   isHost: boolean
   state: string
   reconnectToken: string
+  seatGeneration: number
 }> {
+  const user = await ensureAnonymousAuth()
   const roomRef = ref(db, `rooms/${roomId}`)
   const snapshot = await get(roomRef)
   if (!snapshot.exists()) {
     throw new Error('Room not found')
   }
   const room = snapshot.val()
-  const players = room.players ?? {}
+  const players = (room.players ?? {}) as Record<string, PlayerNode>
   let matchedId: string | null = null
-  for (const [id, p] of Object.entries(players) as Array<[string, { reconnectToken?: string }]>) {
+  for (const [id, p] of Object.entries(players)) {
     if (p.reconnectToken === token) {
       matchedId = id
       break
@@ -261,14 +458,27 @@ export async function reconnectByToken(roomId: string, token: string): Promise<{
     throw new Error('Invalid or expired reconnect token')
   }
   const newToken = generateReconnectToken()
-  const tokenRef = ref(db, `rooms/${roomId}/players/${matchedId}/reconnectToken`)
-  await set(tokenRef, newToken)
+  const isHost = room.hostId === matchedId
+  const state = room.state ?? 'LOBBY'
+  const nextGen = (Number(players[matchedId]?.seatGeneration) || 0) + 1
+  await update(ref(db, `rooms/${roomId}/players/${matchedId}`), {
+    reconnectToken: newToken,
+    uid: user.uid,
+    lastSeen: Date.now(),
+    seatGeneration: nextGen,
+  })
+  if (state === 'GAME_END') {
+    await clearActiveGame('avalon', roomId, user.uid)
+  } else {
+    await setActiveGame('avalon', roomId, matchedId, isHost, user.uid)
+  }
   return {
     roomId,
     playerId: matchedId,
-    isHost: room.hostId === matchedId,
-    state: room.state ?? 'LOBBY',
+    isHost,
+    state,
     reconnectToken: newToken,
+    seatGeneration: nextGen,
   }
 }
 

@@ -11,6 +11,8 @@ import {
 } from '../services/undercoverEngine'
 import type { UndercoverRoom } from '../types/undercover'
 import { PlayerList } from '../components/PlayerList'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadUndercoverSession } from '../utils/undercoverSessionStorage'
 
 type UndercoverLobbyPageProps = {
   roomId: string
@@ -18,6 +20,7 @@ type UndercoverLobbyPageProps = {
   onBack: () => void
   onRemovedFromLobby?: () => void
   onEnterGame?: () => void
+  onSeatTakenOver?: () => void
 }
 
 export function UndercoverLobbyPage({
@@ -26,6 +29,7 @@ export function UndercoverLobbyPage({
   onBack,
   onRemovedFromLobby,
   onEnterGame,
+  onSeatTakenOver,
 }: UndercoverLobbyPageProps) {
   const [room, setRoom] = useState<UndercoverRoom | null>(null)
   const [error, setError] = useState('')
@@ -35,6 +39,14 @@ export function UndercoverLobbyPage({
   const [kickingId, setKickingId] = useState<string | null>(null)
   const [hiddenPrefSaving, setHiddenPrefSaving] = useState(false)
   const wasInLobbyWithSelf = useRef(false)
+  const seatGeneration = loadUndercoverSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `undercoverRooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `undercoverRooms/${roomId}`)
@@ -283,6 +295,7 @@ export function UndercoverLobbyPage({
                       name: p.name,
                       ready: p.ready,
                       role: typeof p.role === 'string' ? p.role : '',
+                      lastSeen: p.lastSeen,
                     },
                   ]
                 })

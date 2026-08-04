@@ -1,6 +1,13 @@
-import { useEffect, useState } from 'react'
-import { createRoom, joinRoom, reconnectRoom } from '../services/gameEngine'
+import { useEffect, useRef, useState } from 'react'
+import { createRoom, joinRoom, reclaimSeatByName, reconnectRoom } from '../services/gameEngine'
 import { buildReconnectUrl, loadSession } from '../utils/sessionStorage'
+
+type ReclaimPrompt = {
+  roomId: string
+  name: string
+  candidateName: string
+  offline: boolean
+}
 
 type HomePageProps = {
   onBackToHub?: () => void
@@ -8,8 +15,26 @@ type HomePageProps = {
   onClearNotice?: () => void
   showRestoreBanner?: boolean
   onRetryRestore?: () => void | Promise<void>
-  onEnterLobby: (roomId: string, playerId: string, isHost: boolean, reconnectToken?: string) => void
-  onReconnect?: (roomId: string, playerId: string, isHost: boolean, state: string, reconnectToken?: string) => void
+  onEnterLobby: (
+    roomId: string,
+    playerId: string,
+    isHost: boolean,
+    reconnectToken?: string,
+    seatGeneration?: number
+  ) => void
+  onReconnect?: (
+    roomId: string,
+    playerId: string,
+    isHost: boolean,
+    state: string,
+    reconnectToken?: string,
+    seatGeneration?: number
+  ) => void
+}
+
+function readInviteRoomFromUrl(): string | null {
+  const room = new URLSearchParams(window.location.search).get('room')?.trim().toUpperCase()
+  return room || null
 }
 
 export function HomePage({
@@ -28,25 +53,39 @@ export function HomePage({
   const [loading, setLoading] = useState(false)
   const [restoreLoading, setRestoreLoading] = useState(false)
   const [quickReconnecting, setQuickReconnecting] = useState(false)
+  const [reclaimPrompt, setReclaimPrompt] = useState<ReclaimPrompt | null>(null)
+  const [inviteRoom] = useState<string | null>(() => readInviteRoomFromUrl())
+  const joinNameRef = useRef<HTMLInputElement>(null)
 
+  const isInviteJoin = Boolean(inviteRoom)
   const savedSession = loadSession()
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const room = params.get('room')?.trim().toUpperCase()
+    if (inviteRoom) {
+      setRoomCode(inviteRoom)
+      return
+    }
+    const room = readInviteRoomFromUrl()
     if (room) setRoomCode(room)
-  }, [])
+  }, [inviteRoom])
+
+  useEffect(() => {
+    if (!isInviteJoin) return
+    const t = window.setTimeout(() => joinNameRef.current?.focus(), 100)
+    return () => window.clearTimeout(t)
+  }, [isInviteJoin])
 
   async function handleCreateRoom() {
     setError('')
+    setReclaimPrompt(null)
     if (!name.trim()) {
       setError('Enter your name')
       return
     }
     setLoading(true)
     try {
-      const { roomId, hostId, reconnectToken } = await createRoom(name.trim())
-      onEnterLobby(roomId, hostId, true, reconnectToken)
+      const { roomId, hostId, reconnectToken, seatGeneration } = await createRoom(name.trim())
+      onEnterLobby(roomId, hostId, true, reconnectToken, seatGeneration)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create room')
     } finally {
@@ -56,7 +95,8 @@ export function HomePage({
 
   async function handleJoinRoom() {
     setError('')
-    const code = roomCode.trim().toUpperCase()
+    setReclaimPrompt(null)
+    const code = (isInviteJoin ? inviteRoom : roomCode)?.trim().toUpperCase() ?? ''
     if (!code) {
       setError('Enter room code')
       return
@@ -67,8 +107,28 @@ export function HomePage({
     }
     setLoading(true)
     try {
-      const { playerId, reconnectToken } = await joinRoom(code, joinName.trim())
-      onEnterLobby(code, playerId, false, reconnectToken)
+      const result = await joinRoom(code, joinName.trim())
+      if ('needsReclaim' in result && result.needsReclaim) {
+        setReclaimPrompt({
+          roomId: code,
+          name: joinName.trim(),
+          candidateName: result.candidateName,
+          offline: result.offline,
+        })
+        return
+      }
+      if (result.rejoined && onReconnect) {
+        onReconnect(
+          code,
+          result.playerId,
+          result.isHost,
+          result.state,
+          result.reconnectToken,
+          result.seatGeneration
+        )
+      } else {
+        onEnterLobby(code, result.playerId, result.isHost, result.reconnectToken, result.seatGeneration)
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to join room'
       if (msg === 'Game has already started' && onReconnect) {
@@ -76,17 +136,46 @@ export function HomePage({
         if (session?.roomId === code && session?.playerId) {
           try {
             const recon = await reconnectRoom(code, session.playerId)
-            onReconnect(recon.roomId, recon.playerId, recon.isHost, recon.state, session.reconnectToken)
+            onReconnect(
+              recon.roomId,
+              recon.playerId,
+              recon.isHost,
+              recon.state,
+              recon.reconnectToken ?? session.reconnectToken,
+              recon.seatGeneration
+            )
             return
           } catch {
-            setError('游戏已开始。若你刚掉线，请刷新页面自动恢复；否则无法加入已开始的对局。')
+            setError('游戏已开始。若你刚掉线，请用原来的昵称加入以认领座位。')
             return
           }
         }
-        setError('游戏已开始。若你刚掉线，请刷新页面自动恢复；否则无法加入已开始的对局。')
+        setError('游戏已开始。若你刚掉线，请用原来的昵称加入以认领座位。')
         return
       }
       setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleConfirmReclaim() {
+    if (!reclaimPrompt) return
+    setLoading(true)
+    setError('')
+    try {
+      const recon = await reclaimSeatByName(reclaimPrompt.roomId, reclaimPrompt.name, { force: true })
+      setReclaimPrompt(null)
+      onReconnect?.(
+        reclaimPrompt.roomId,
+        recon.playerId,
+        recon.isHost,
+        recon.state,
+        recon.reconnectToken,
+        recon.seatGeneration
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '认领座位失败')
     } finally {
       setLoading(false)
     }
@@ -98,7 +187,14 @@ export function HomePage({
     setError('')
     try {
       const recon = await reconnectRoom(savedSession.roomId, savedSession.playerId)
-      onReconnect?.(recon.roomId, recon.playerId, recon.isHost, recon.state, savedSession.reconnectToken)
+      onReconnect?.(
+        recon.roomId,
+        recon.playerId,
+        recon.isHost,
+        recon.state,
+        recon.reconnectToken ?? savedSession.reconnectToken,
+        recon.seatGeneration
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : '重连失败')
     } finally {
@@ -108,6 +204,8 @@ export function HomePage({
 
   const base = import.meta.env.BASE_URL
   const coverSrc = `${base.endsWith('/') ? base : `${base}/`}app-cover.png`
+  const showQuickReconnect =
+    Boolean(savedSession) && (!isInviteJoin || savedSession?.roomId === inviteRoom)
 
   return (
     <div className="min-h-dvh flex flex-col items-center px-5 pt-6 pb-12 animate-page-enter">
@@ -123,54 +221,107 @@ export function HomePage({
         </div>
       )}
 
-      {/* Hero Cover */}
-      <div className="w-full max-w-lg mx-auto shrink-0 mb-8">
-        <div className="relative rounded-2xl overflow-hidden">
-          <div className="relative w-full aspect-[2/1] max-h-[min(44vh,340px)]">
-            <img
-              src={coverSrc}
-              alt="谁是真的派西维尔?"
-              className="hero-cover-img absolute inset-0 h-full w-full object-cover object-center"
-              width={1024}
-              height={512}
-              decoding="async"
-              fetchPriority="high"
-            />
-            <div
-              className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--avalon-bg)] via-[var(--avalon-bg)]/40 to-transparent"
-              aria-hidden
-            />
+      {!isInviteJoin && (
+        <>
+          <div className="w-full max-w-lg mx-auto shrink-0 mb-8">
+            <div className="relative rounded-2xl overflow-hidden">
+              <div className="relative w-full aspect-[2/1] max-h-[min(44vh,340px)]">
+                <img
+                  src={coverSrc}
+                  alt="谁是真的派西维尔?"
+                  className="hero-cover-img absolute inset-0 h-full w-full object-cover object-center"
+                  width={1024}
+                  height={512}
+                  decoding="async"
+                  fetchPriority="high"
+                />
+                <div
+                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--avalon-bg)] via-[var(--avalon-bg)]/40 to-transparent"
+                  aria-hidden
+                />
+              </div>
+            </div>
           </div>
+
+          <div className="text-center mb-8 animate-slide-up px-1" style={{ animationDelay: '100ms' }}>
+            <h1 className="text-[1.65rem] sm:text-4xl font-bold tracking-tight text-white/95 leading-snug">
+              谁是真的派西维尔?
+            </h1>
+          </div>
+        </>
+      )}
+
+      {isInviteJoin && (
+        <div className="text-center mb-6 px-1">
+          <p className="section-label mb-2">阿瓦隆</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white/95">加入房间</h1>
+          <p className="mt-2 font-mono text-lg tracking-wider text-emerald-300/90">{inviteRoom}</p>
+          <p className="mt-2 text-sm text-slate-400">输入你的名字即可进房；若曾掉线请用原来的昵称。</p>
         </div>
-      </div>
+      )}
 
-      {/* Title */}
-      <div className="text-center mb-8 animate-slide-up px-1" style={{ animationDelay: '100ms' }}>
-        <h1 className="text-[1.65rem] sm:text-4xl font-bold tracking-tight text-white/95 leading-snug">
-          谁是真的派西维尔?
-        </h1>
-      </div>
-
-      {/* Notices */}
       {notice && (
         <div className="w-full max-w-sm mb-4 rounded-xl border border-amber-500/20 bg-amber-950/30 backdrop-blur-sm p-3.5 text-sm text-amber-100/90 flex gap-2 items-start animate-slide-down">
           <span className="flex-1">{notice}</span>
           {onClearNotice && (
-            <button type="button" onClick={onClearNotice} className="shrink-0 text-amber-300/80 font-medium text-xs uppercase tracking-wide">
+            <button
+              type="button"
+              onClick={onClearNotice}
+              className="shrink-0 text-amber-300/80 font-medium text-xs uppercase tracking-wide"
+            >
               关闭
             </button>
           )}
         </div>
       )}
 
-      {/* Quick Reconnect — always visible when session exists */}
-      {savedSession && (
+      {reclaimPrompt && (
+        <div className="w-full max-w-sm mb-5 avalon-card border border-sky-400/25 p-4 animate-scale-in">
+          <p className="text-sm font-medium text-slate-100">
+            房间里已有「{reclaimPrompt.candidateName}」
+          </p>
+          <p className="mt-1.5 text-[0.8125rem] text-slate-400 leading-relaxed">
+            {reclaimPrompt.offline
+              ? '该座位看起来已离线。若这是你（例如微信里滑出去又扫码回来），可以回到原座位。'
+              : '该座位似乎仍在线。若刚才是你被挤出或换了微信页面，可确认认领；否则请换个名字。'}
+          </p>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void handleConfirmReclaim()}
+            className="w-full mt-3 min-h-[44px] rounded-xl btn-primary px-4 py-2.5 font-semibold disabled:opacity-50 text-sm"
+          >
+            {reclaimPrompt.offline ? '回到座位（离线）' : '确定是我，回到座位'}
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setReclaimPrompt(null)}
+            className="w-full mt-2 min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-400 text-xs font-medium"
+          >
+            换个名字
+          </button>
+        </div>
+      )}
+
+      {showQuickReconnect && savedSession && (
         <div className="w-full max-w-sm mb-5 avalon-card avalon-card-glow-good p-4 animate-scale-in">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-lg bg-blue-500/10 border border-blue-500/15 flex items-center justify-center shrink-0 mt-0.5">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-blue-400">
-                <path d="M2 8a6 6 0 0111.46-2.46M14 8a6 6 0 01-11.46 2.46" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <path d="M14 2v4h-4M2 14v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path
+                  d="M2 8a6 6 0 0111.46-2.46M14 8a6 6 0 01-11.46 2.46"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M14 2v4h-4M2 14v-4h4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
             <div className="flex-1 min-w-0">
@@ -191,12 +342,15 @@ export function HomePage({
               type="button"
               onClick={() => {
                 const url = buildReconnectUrl(savedSession.roomId, savedSession.reconnectToken!)
-                navigator.clipboard.writeText(url).then(() => {
-                  setError('')
-                  setError('已复制重连链接，发给掉线的自己或队友即可回来')
-                }).catch(() => {
-                  prompt('复制此链接回到游戏：', url)
-                })
+                navigator.clipboard
+                  .writeText(url)
+                  .then(() => {
+                    setError('')
+                    setError('已复制重连链接，发给掉线的自己或队友即可回来')
+                  })
+                  .catch(() => {
+                    prompt('复制此链接回到游戏：', url)
+                  })
               }}
               className="w-full mt-2 min-h-[40px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-400 text-xs font-medium transition-colors active:bg-white/[0.08]"
             >
@@ -206,7 +360,6 @@ export function HomePage({
         </div>
       )}
 
-      {/* Restore banner (network failure) */}
       {showRestoreBanner && onRetryRestore && !savedSession && (
         <div className="w-full max-w-sm mb-4 rounded-xl avalon-card avalon-card-glow-good p-4 text-sm text-slate-200 animate-scale-in">
           <p className="mb-3 text-slate-300/90 text-[0.8125rem] leading-relaxed">
@@ -236,60 +389,86 @@ export function HomePage({
         </div>
       )}
 
-      {/* Cards */}
       <div className="flex flex-col gap-4 w-full max-w-sm stagger-children" style={{ animationDelay: '150ms' }}>
-        {/* Create Room */}
-        <div className="avalon-card p-5 flex flex-col gap-3">
-          <p className="section-label">创建房间</p>
-          <input
-            type="text"
-            placeholder="你的名字"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="input-glass"
-            aria-label="Your name for create"
-          />
-          <button
-            type="button"
-            onClick={handleCreateRoom}
-            disabled={loading}
-            className="min-h-[48px] btn-primary px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem]"
-          >
-            创建房间
-          </button>
-        </div>
+        {isInviteJoin ? (
+          <div className="avalon-card p-5 flex flex-col gap-3">
+            <p className="section-label">你的名字</p>
+            <input
+              ref={joinNameRef}
+              type="text"
+              placeholder="输入昵称后加入"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleJoinRoom()
+              }}
+              className="input-glass"
+              aria-label="Your name for join"
+              autoComplete="nickname"
+            />
+            <button
+              type="button"
+              onClick={handleJoinRoom}
+              disabled={loading}
+              className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
+            >
+              {loading ? '加入中…' : '加入房间'}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="avalon-card p-5 flex flex-col gap-3">
+              <p className="section-label">创建房间</p>
+              <input
+                type="text"
+                placeholder="你的名字"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="input-glass"
+                aria-label="Your name for create"
+              />
+              <button
+                type="button"
+                onClick={handleCreateRoom}
+                disabled={loading}
+                className="min-h-[48px] btn-primary px-4 py-3 font-semibold disabled:opacity-50 text-[0.9375rem]"
+              >
+                创建房间
+              </button>
+            </div>
 
-        <div className="divider" />
+            <div className="divider" />
 
-        {/* Join Room */}
-        <div className="avalon-card p-5 flex flex-col gap-3">
-          <p className="section-label">加入房间</p>
-          <input
-            type="text"
-            placeholder="房间码"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            className="input-glass font-mono uppercase tracking-widest"
-            aria-label="Room code"
-            maxLength={6}
-          />
-          <input
-            type="text"
-            placeholder="你的名字"
-            value={joinName}
-            onChange={(e) => setJoinName(e.target.value)}
-            className="input-glass"
-            aria-label="Your name for join"
-          />
-          <button
-            type="button"
-            onClick={handleJoinRoom}
-            disabled={loading}
-            className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
-          >
-            加入房间
-          </button>
-        </div>
+            <div className="avalon-card p-5 flex flex-col gap-3">
+              <p className="section-label">加入房间</p>
+              <input
+                type="text"
+                placeholder="房间码"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                className="input-glass font-mono uppercase tracking-widest"
+                aria-label="Room code"
+                maxLength={6}
+              />
+              <input
+                type="text"
+                placeholder="你的名字"
+                value={joinName}
+                onChange={(e) => setJoinName(e.target.value)}
+                className="input-glass"
+                aria-label="Your name for join"
+              />
+              <button
+                type="button"
+                onClick={handleJoinRoom}
+                disabled={loading}
+                className="min-h-[48px] btn-success px-4 py-3 font-semibold text-white rounded-[0.875rem] disabled:opacity-50 text-[0.9375rem]"
+              >
+                加入房间
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

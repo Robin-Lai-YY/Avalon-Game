@@ -2,6 +2,7 @@ const KEY_ROOM = 'undercover_roomId'
 const KEY_PLAYER = 'undercover_playerId'
 const KEY_HOST = 'undercover_isHost'
 const KEY_TOKEN = 'undercover_reconnectToken'
+const KEY_GEN = 'undercover_seatGeneration'
 const KEY_SAVED_AT = 'undercover_savedAt'
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -10,6 +11,7 @@ export type UndercoverSession = {
   playerId: string
   isHost: boolean
   reconnectToken?: string
+  seatGeneration?: number
   savedAt?: number
 }
 
@@ -18,7 +20,8 @@ function write(
   roomId: string,
   playerId: string,
   isHost: boolean,
-  reconnectToken?: string
+  reconnectToken?: string,
+  seatGeneration?: number
 ) {
   if (!storage) return
   storage.setItem(KEY_ROOM, roomId)
@@ -26,6 +29,9 @@ function write(
   storage.setItem(KEY_HOST, isHost ? '1' : '0')
   storage.setItem(KEY_SAVED_AT, String(Date.now()))
   if (reconnectToken) storage.setItem(KEY_TOKEN, reconnectToken)
+  if (seatGeneration != null && Number.isFinite(seatGeneration)) {
+    storage.setItem(KEY_GEN, String(seatGeneration))
+  }
 }
 
 function read(storage: Storage | null): UndercoverSession | null {
@@ -38,11 +44,14 @@ function read(storage: Storage | null): UndercoverSession | null {
     clear(storage)
     return null
   }
+  const genRaw = storage.getItem(KEY_GEN)
+  const seatGeneration = genRaw != null ? Number(genRaw) : undefined
   return {
     roomId,
     playerId,
     isHost: storage.getItem(KEY_HOST) === '1',
     reconnectToken: storage.getItem(KEY_TOKEN) ?? undefined,
+    seatGeneration: seatGeneration != null && Number.isFinite(seatGeneration) ? seatGeneration : undefined,
     savedAt: savedAt || undefined,
   }
 }
@@ -53,6 +62,7 @@ function clear(storage: Storage | null) {
   storage.removeItem(KEY_PLAYER)
   storage.removeItem(KEY_HOST)
   storage.removeItem(KEY_TOKEN)
+  storage.removeItem(KEY_GEN)
   storage.removeItem(KEY_SAVED_AT)
 }
 
@@ -63,11 +73,12 @@ export function saveUndercoverSession(
   roomId: string,
   playerId: string,
   isHost: boolean,
-  reconnectToken?: string
+  reconnectToken?: string,
+  seatGeneration?: number
 ) {
   try {
-    write(session, roomId, playerId, isHost, reconnectToken)
-    write(local, roomId, playerId, isHost, reconnectToken)
+    write(session, roomId, playerId, isHost, reconnectToken, seatGeneration)
+    write(local, roomId, playerId, isHost, reconnectToken, seatGeneration)
   } catch {
     // ignore
   }

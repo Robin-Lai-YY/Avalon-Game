@@ -11,6 +11,8 @@ import {
 import type { NinjaRoom } from '../types/ninja'
 import { NinjaRulesSheet } from '../components/NinjaRulesSheet'
 import { NinjaSeatTable } from '../components/NinjaSeatTable'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadNinjaSession } from '../utils/ninjaSessionStorage'
 
 type NinjaLobbyPageProps = {
   roomId: string
@@ -18,6 +20,7 @@ type NinjaLobbyPageProps = {
   onBack: () => void
   onRemovedFromLobby?: () => void
   onEnterGame?: () => void
+  onSeatTakenOver?: () => void
 }
 
 export function NinjaLobbyPage({
@@ -26,6 +29,7 @@ export function NinjaLobbyPage({
   onBack,
   onRemovedFromLobby,
   onEnterGame,
+  onSeatTakenOver,
 }: NinjaLobbyPageProps) {
   const [room, setRoom] = useState<NinjaRoom | null>(null)
   const [error, setError] = useState('')
@@ -34,6 +38,14 @@ export function NinjaLobbyPage({
   const [kickingId, setKickingId] = useState<string | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
   const wasInLobbyWithSelf = useRef(false)
+  const seatGeneration = loadNinjaSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `ninjaRooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `ninjaRooms/${roomId}`)

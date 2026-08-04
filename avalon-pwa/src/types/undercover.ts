@@ -22,6 +22,10 @@ export type UndercoverPlayer = {
   role: UndercoverRole | ''
   word: string | null
   reconnectToken: string
+  /** Firebase Auth uid bound to this seat (anonymous or linked). */
+  uid?: string
+  lastSeen?: number
+  seatGeneration?: number
   /** 大厅内是否同意本局使用隐藏题库；仅本人应在 UI 中展示，勿在列表中泄露他人选择。 */
   preferHiddenBank?: boolean
 }

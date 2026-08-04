@@ -2,6 +2,7 @@ const KEY_ROOM = 'avalon_roomId'
 const KEY_PLAYER = 'avalon_playerId'
 const KEY_HOST = 'avalon_isHost'
 const KEY_TOKEN = 'avalon_reconnectToken'
+const KEY_GEN = 'avalon_seatGeneration'
 const KEY_SAVED_AT = 'avalon_savedAt'
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -10,10 +11,18 @@ export type Session = {
   playerId: string
   isHost: boolean
   reconnectToken?: string
+  seatGeneration?: number
   savedAt?: number
 }
 
-function write(storage: Storage | null, roomId: string, playerId: string, isHost: boolean, reconnectToken?: string) {
+function write(
+  storage: Storage | null,
+  roomId: string,
+  playerId: string,
+  isHost: boolean,
+  reconnectToken?: string,
+  seatGeneration?: number
+) {
   if (!storage) return
   storage.setItem(KEY_ROOM, roomId)
   storage.setItem(KEY_PLAYER, playerId)
@@ -21,6 +30,9 @@ function write(storage: Storage | null, roomId: string, playerId: string, isHost
   storage.setItem(KEY_SAVED_AT, String(Date.now()))
   if (reconnectToken) {
     storage.setItem(KEY_TOKEN, reconnectToken)
+  }
+  if (seatGeneration != null && Number.isFinite(seatGeneration)) {
+    storage.setItem(KEY_GEN, String(seatGeneration))
   }
 }
 
@@ -34,11 +46,14 @@ function read(storage: Storage | null): Session | null {
     clear(storage)
     return null
   }
+  const genRaw = storage.getItem(KEY_GEN)
+  const seatGeneration = genRaw != null ? Number(genRaw) : undefined
   return {
     roomId,
     playerId,
     isHost: storage.getItem(KEY_HOST) === '1',
     reconnectToken: storage.getItem(KEY_TOKEN) ?? undefined,
+    seatGeneration: seatGeneration != null && Number.isFinite(seatGeneration) ? seatGeneration : undefined,
     savedAt: savedAt || undefined,
   }
 }
@@ -49,29 +64,28 @@ function clear(storage: Storage | null) {
   storage.removeItem(KEY_PLAYER)
   storage.removeItem(KEY_HOST)
   storage.removeItem(KEY_TOKEN)
+  storage.removeItem(KEY_GEN)
   storage.removeItem(KEY_SAVED_AT)
 }
 
 const session = typeof sessionStorage !== 'undefined' ? sessionStorage : null
 const local = typeof localStorage !== 'undefined' ? localStorage : null
 
-/**
- * Save to both storages:
- * - sessionStorage: this tab keeps its own copy (refresh / multi-tab).
- * - localStorage: survives closing the tab or browser so you can return to the same room later.
- */
-export function saveSession(roomId: string, playerId: string, isHost: boolean, reconnectToken?: string): void {
+export function saveSession(
+  roomId: string,
+  playerId: string,
+  isHost: boolean,
+  reconnectToken?: string,
+  seatGeneration?: number
+): void {
   try {
-    write(session, roomId, playerId, isHost, reconnectToken)
-    write(local, roomId, playerId, isHost, reconnectToken)
+    write(session, roomId, playerId, isHost, reconnectToken, seatGeneration)
+    write(local, roomId, playerId, isHost, reconnectToken, seatGeneration)
   } catch {
     // ignore quota / private mode
   }
 }
 
-/**
- * Prefer sessionStorage (correct per-tab identity), then localStorage (after full browser restart).
- */
 export function loadSession(): Session | null {
   try {
     return read(session) ?? read(local)
@@ -89,7 +103,6 @@ export function clearSession(): void {
   }
 }
 
-/** True if reconnect failure means the saved session is useless and should be dropped. */
 export function isReconnectPermanentFailure(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
   return (
@@ -99,10 +112,7 @@ export function isReconnectPermanentFailure(err: unknown): boolean {
   )
 }
 
-/**
- * Build a shareable reconnect URL that works even without local storage.
- */
 export function buildReconnectUrl(roomId: string, token: string): string {
   const base = window.location.origin + window.location.pathname
-  return `${base}?room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`
+  return `${base}?game=avalon&room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`
 }

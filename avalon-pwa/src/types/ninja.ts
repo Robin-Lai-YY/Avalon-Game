@@ -73,6 +73,10 @@ export type NinjaPlayer = {
   ready: boolean
   isAlive: boolean
   reconnectToken: string
+  /** Firebase Auth uid bound to this seat (anonymous or linked). */
+  uid?: string
+  lastSeen?: number
+  seatGeneration?: number
 
   /** Cards currently in the player's hand (face-down to others, public to self). */
   hand: NinjaCard[]

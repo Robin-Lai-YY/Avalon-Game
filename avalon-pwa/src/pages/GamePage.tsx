@@ -21,6 +21,8 @@ import { VoteHistoryPanel } from '../components/VoteHistoryPanel'
 import { GameRulesSheet } from '../components/GameRulesSheet'
 import { ResultPage } from './ResultPage'
 import { getMissionTeamSize } from '../utils/missionRules'
+import { useSeatPresence } from '../hooks/useSeatPresence'
+import { loadSession } from '../utils/sessionStorage'
 
 type RoomData = {
   hostId?: string
@@ -52,9 +54,17 @@ type GamePageProps = {
   onPlayAgain?: () => void
   onForceExit?: () => void
   onReturnToLobby?: () => void
+  onSeatTakenOver?: () => void
 }
 
-export function GamePage({ roomId, playerId, onPlayAgain, onForceExit, onReturnToLobby }: GamePageProps) {
+export function GamePage({
+  roomId,
+  playerId,
+  onPlayAgain,
+  onForceExit,
+  onReturnToLobby,
+  onSeatTakenOver,
+}: GamePageProps) {
   const [room, setRoom] = useState<RoomData | null>(null)
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,6 +74,14 @@ export function GamePage({ roomId, playerId, onPlayAgain, onForceExit, onReturnT
   const [aborting, setAborting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const seatGeneration = loadSession()?.seatGeneration ?? 0
+
+  useSeatPresence({
+    roomPath: `rooms/${roomId}`,
+    playerId,
+    seatGeneration,
+    onSeatTakenOver: () => onSeatTakenOver?.(),
+  })
 
   useEffect(() => {
     const roomRef = ref(db, `rooms/${roomId}`)
