@@ -1020,7 +1020,7 @@ function advanceFromCurrentPhase(room: NinjaRoom): NinjaRoom {
   } as NinjaRoom
 }
 
-/** Alive player with no matching phase cards confirms “本阶段无行动”. */
+/** Alive player with no matching phase cards confirms “没有此牌，点击继续”. */
 export async function ackNightPhase(roomId: string, playerId: string): Promise<void> {
   const roomRef = ref(db, `ninjaRooms/${roomId}`)
   await runTransaction(roomRef, (raw) => {
@@ -1171,6 +1171,7 @@ function makePendingAction(args: {
     step,
     shinobiTargetId: null,
     mysticTargetId: null,
+    peekTargetId: null,
     spiritMerchantTargetId: null,
     gravediggerOptionIds: null,
     gravediggerPickedId: null,
@@ -1314,7 +1315,20 @@ export async function submitTarget(
         ownerId: playerId,
         patch: { addSpy: { targetId, card: houseCard } },
       }
-      let next = discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      // Hold on peek_ack so the peeker can read the private result before the queue moves on.
+      let next = discardPlayedCard(room, playerId, pa.cardId)
+      next = {
+        ...next,
+        currentNight: {
+          ...next.currentNight!,
+          pendingAction: makePendingAction({
+            ownerId: playerId,
+            card,
+            step: 'peek_ack',
+            overrides: { peekTargetId: targetId },
+          }),
+        },
+      } as NinjaRoom
       next = appendPublicNightEvent(next, {
         kind: 'peek',
         actorId: playerId,
@@ -1342,7 +1356,19 @@ export async function submitTarget(
           },
         },
       }
-      let next = discardPlayedCard(advanceQueueIndex(clearPending(room)), playerId, pa.cardId)
+      let next = discardPlayedCard(room, playerId, pa.cardId)
+      next = {
+        ...next,
+        currentNight: {
+          ...next.currentNight!,
+          pendingAction: makePendingAction({
+            ownerId: playerId,
+            card,
+            step: 'peek_ack',
+            overrides: { peekTargetId: targetId },
+          }),
+        },
+      } as NinjaRoom
       next = appendPublicNightEvent(next, {
         kind: 'peek',
         actorId: playerId,
@@ -1407,6 +1433,19 @@ export async function submitTarget(
   // If the trickster pick transitioned into a "decide" step that needs a private
   // peek, write it now (out-of-transaction) before the player sees the panel.
   await primeTroublemakerPeek(roomId)
+  await tryAdvanceResolution(roomId)
+}
+
+/** Spy / mystic: peeker confirms they have read the private result before resolution continues. */
+export async function ackPeekResult(roomId: string, playerId: string): Promise<void> {
+  const roomRef = ref(db, `ninjaRooms/${roomId}`)
+  await runTransaction(roomRef, (raw) => {
+    if (!raw) return raw
+    const room = raw as NinjaRoom
+    const pa = room.currentNight?.pendingAction
+    if (!pa || pa.step !== 'peek_ack' || pa.playerId !== playerId) return raw
+    return advanceQueueIndex(clearPending(room))
+  })
   await tryAdvanceResolution(roomId)
 }
 

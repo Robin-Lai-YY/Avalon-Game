@@ -122,6 +122,7 @@ export type PendingActionStep =
   | 'pick_card_to_view'
   | 'pick_card_to_discard'
   | 'pick_token'
+  | 'peek_ack'
   | 'shinobi_decide'
   | 'gravedigger_pick'
   | 'gravedigger_decide'
@@ -139,6 +140,8 @@ export type PendingAction = {
   step: PendingActionStep
   shinobiTargetId?: string | null
   mysticTargetId?: string | null
+  /** Spy / mystic peek result ack — who was viewed. */
+  peekTargetId?: string | null
   spiritMerchantTargetId?: string | null
   gravediggerOptionIds?: string[] | null
   /** After pick: the card taken from discard (before play-now / keep). */

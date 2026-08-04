@@ -23,6 +23,7 @@ import {
   submitSpiritMerchantView,
   submitTarget,
   submitTroublemakerDecision,
+  ackPeekResult,
   tryAdvanceResolution,
 } from '../services/ninjaEngine'
 import type {
@@ -30,6 +31,7 @@ import type {
   NinjaCard,
   NinjaCardKind,
   NinjaPrivateRoundState,
+  NinjaPublicNightEvent,
   NinjaRoom,
   PendingAction,
   TricksterVariant,
@@ -188,6 +190,7 @@ export function NinjaGamePage({
   const [phaseTransition, setPhaseTransition] = useState<{ state: NinjaRoom['state']; nonce: number } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const previousStateRef = useRef<NinjaRoom['state'] | null>(null)
+  const actionAnchorRef = useRef<HTMLDivElement | null>(null)
   const seatGeneration = loadNinjaSession()?.seatGeneration ?? 0
 
   useSeatPresence({
@@ -228,7 +231,7 @@ export function NinjaGamePage({
     setPhaseTransition({ state: room.state, nonce })
     const timeout = window.setTimeout(() => {
       setPhaseTransition((current) => (current?.nonce === nonce ? null : current))
-    }, 1700)
+    }, 2400)
     return () => window.clearTimeout(timeout)
   }, [room?.state])
 
@@ -312,6 +315,24 @@ export function NinjaGamePage({
     }
   }, [pa?.step, pa?.cardId, pa?.spiritMerchantTargetId])
 
+  // When it's your turn to act (pending / reactive), scroll the panel into view.
+  const myActionKey = useMemo(() => {
+    if (pa && pa.playerId === playerId) return `pa:${pa.step}:${pa.cardId}:${pa.peekTargetId ?? ''}:${pa.shinobiTargetId ?? ''}`
+    const reactive = room?.currentNight?.reactive
+    if (reactive && reactive.currentResponderId === playerId) {
+      return `rx:${reactive.victimId}:${reactive.triggerCardId}`
+    }
+    return null
+  }, [pa, playerId, room?.currentNight?.reactive])
+
+  useEffect(() => {
+    if (!myActionKey) return
+    const id = window.setTimeout(() => {
+      actionAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+    return () => window.clearTimeout(id)
+  }, [myActionKey])
+
   async function safeRun<T>(fn: () => Promise<T>) {
     setLoading(true)
     setError('')
@@ -354,6 +375,9 @@ export function NinjaGamePage({
   }
   async function handlePhaseAck() {
     void safeRun(() => ackNightPhase(roomId, playerId))
+  }
+  async function handlePeekAck() {
+    void safeRun(() => ackPeekResult(roomId, playerId))
   }
   async function handleSpiritMerchantView() {
     void safeRun(() => submitSpiritMerchantView(roomId, playerId, smView))
@@ -583,6 +607,7 @@ export function NinjaGamePage({
         />
       )}
 
+      <div ref={actionAnchorRef} className="scroll-mt-24 flex flex-col gap-4">
       {pa && (
         <PendingActionPanel
           room={room}
@@ -603,6 +628,8 @@ export function NinjaGamePage({
           onTroublemakerDecision={handleTroublemakerDecision}
           onShapeshifterB={handleShapeshifterB}
           onShapeshifterDecision={handleShapeshifterDecision}
+          onPeekAck={handlePeekAck}
+          privateState={privateState}
           peekedHouse={privateState?.shinobiPeek?.card ?? null}
           troublemakerPeek={privateState?.troublemakerPeek ?? null}
           shapeshifterPeeks={privateState?.shapeshifterPeeks ?? null}
@@ -623,6 +650,7 @@ export function NinjaGamePage({
           onPass={() => handleReactive('pass')}
         />
       )}
+      </div>
 
       <NightActionLogCard room={room} />
 
@@ -740,10 +768,10 @@ function NinjaPhaseTransitionOverlay({
   return createPortal(
     <div
       key={transition.nonce}
-      className="pointer-events-none fixed left-0 top-0 z-[9999] flex w-screen items-center justify-center bg-slate-950/45 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
+      className="pointer-events-none fixed left-0 top-0 z-[9999] flex w-screen items-center justify-center bg-slate-950/50 px-6 backdrop-blur-md motion-safe:animate-phase-overlay"
       style={{ height: '100dvh' }}
     >
-      <div className="w-full max-w-sm rounded-[2rem] border border-rose-200/15 bg-[#070b13]/95 p-6 text-center shadow-2xl shadow-black/50">
+      <div className="w-full max-w-sm rounded-[2rem] border border-rose-200/15 bg-[#070b13]/95 p-6 text-center shadow-2xl shadow-black/50 motion-safe:animate-phase-card">
         <p className="text-[0.625rem] font-black uppercase tracking-[0.32em] text-rose-200/70">
           {copy.eyebrow}
         </p>
@@ -789,6 +817,14 @@ function NightPhasePanel({
     if (matching.length === 0) return (room.currentNight?.phaseAckIds ?? []).includes(id)
     return matching.every((c) => p.nightChoices?.[c.id] !== undefined)
   }).length
+  const waitingNames = aliveIds
+    .filter((id) => {
+      const p = players[id]!
+      const matching = (p.hand ?? []).filter((c) => c.kind === kind)
+      if (matching.length === 0) return !(room.currentNight?.phaseAckIds ?? []).includes(id)
+      return matching.some((c) => p.nightChoices?.[c.id] === undefined)
+    })
+    .map((id) => (id === playerId ? '你' : players[id]?.name ?? id))
 
   const locked = room.currentNight?.declarationsLocked === true
   const queue = room.currentNight?.resolutionQueue ?? []
@@ -814,16 +850,22 @@ function NightPhasePanel({
         )}
       </div>
 
+      {!locked && waitingNames.length > 0 && (
+        <p className="mb-3 text-xs leading-relaxed text-amber-100/75">
+          还在等：{waitingNames.join('、')}
+        </p>
+      )}
+
       {!locked && myCardsThisPhase.length === 0 && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm text-slate-400">你没有该阶段的牌，确认后等待其他人。</p>
+          <p className="text-sm text-slate-400">本阶段你没有可出的牌，点继续后等待持牌玩家。</p>
           <button
             type="button"
             disabled={loading || iAcked}
             onClick={onAck}
             className="min-h-[44px] rounded-xl btn-primary font-semibold disabled:opacity-50"
           >
-            {iAcked ? '已确认' : '本阶段无行动'}
+            {iAcked ? '已继续，等待其他人…' : '没有此牌，点击继续'}
           </button>
         </div>
       )}
@@ -878,6 +920,89 @@ function NightPhasePanel({
   )
 }
 
+function ShinobiDecidePanel({
+  room,
+  playerId,
+  pa,
+  peekedHouse,
+  loading,
+  onShinobiDecision,
+}: {
+  room: NinjaRoom
+  playerId: string
+  pa: PendingAction
+  peekedHouse: HouseCard | null
+  loading: boolean
+  onShinobiDecision: (kill: boolean) => void
+}) {
+  const [peekAcked, setPeekAcked] = useState(false)
+  const targetId = pa.shinobiTargetId
+  const targetName =
+    targetId == null
+      ? '目标'
+      : targetId === playerId
+        ? '你自己'
+        : room.players?.[targetId]?.name ?? targetId
+
+  useEffect(() => {
+    setPeekAcked(false)
+  }, [pa.cardId, pa.shinobiTargetId])
+
+  return (
+    <div className="avalon-card p-4 border border-emerald-500/30 bg-emerald-950/15">
+      <p className="section-label mb-2 text-emerald-200">上忍窥探结果（仅你可见）</p>
+      <p className="text-sm text-emerald-100/85 mb-3">目标：{targetName}</p>
+      {peekedHouse ? (
+        <div className="mb-4 rounded-xl border border-white/[0.08] bg-black/25 px-3 py-3">
+          <p className="text-sm text-slate-100">
+            流派牌：<HouseCardLabel card={peekedHouse} />
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400 mb-4">读取目标流派中…</p>
+      )}
+
+      {!peekAcked ? (
+        <>
+          <p className="text-xs text-emerald-200/60 mb-3">先看清流派，再决定是否暗杀。</p>
+          <button
+            type="button"
+            disabled={loading || !peekedHouse}
+            onClick={() => setPeekAcked(true)}
+            className="w-full min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
+          >
+            我看完了，决定是否暗杀
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-emerald-200/60 mb-3">
+            已确认看到 {targetName} 的流派。选择后不可撤销。
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => onShinobiDecision(true)}
+              className="min-h-[44px] rounded-xl bg-red-500/20 border border-red-400/40 text-red-100 font-semibold disabled:opacity-50"
+            >
+              暗杀
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => onShinobiDecision(false)}
+              className="min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-200 font-semibold disabled:opacity-50"
+            >
+              放过
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function PendingActionPanel({
   room,
   playerId,
@@ -897,6 +1022,8 @@ function PendingActionPanel({
   onTroublemakerDecision,
   onShapeshifterB,
   onShapeshifterDecision,
+  onPeekAck,
+  privateState,
   peekedHouse,
   troublemakerPeek,
   shapeshifterPeeks,
@@ -919,6 +1046,8 @@ function PendingActionPanel({
   onTroublemakerDecision: (reveal: boolean) => void
   onShapeshifterB: (bId: string) => void
   onShapeshifterDecision: (swap: boolean) => void
+  onPeekAck: () => void
+  privateState: NinjaPrivateRoundState | null
   peekedHouse: HouseCard | null
   troublemakerPeek: NinjaPrivateRoundState['troublemakerPeek']
   shapeshifterPeeks: NinjaPrivateRoundState['shapeshifterPeeks']
@@ -930,9 +1059,12 @@ function PendingActionPanel({
   if (!isMine) {
     const ownerName = room.players?.[pa.playerId]?.name ?? '某位玩家'
     const variantLabel = pa.variant ? TRICKSTER_LABEL[pa.variant] : ''
+    const waitingPeek = pa.step === 'peek_ack'
     return (
       <div className="avalon-card p-4 border border-amber-500/25 bg-amber-950/15">
-        <p className="section-label mb-1 text-amber-200">等待 {ownerName} 行动…</p>
+        <p className="section-label mb-1 text-amber-200">
+          {waitingPeek ? `等待 ${ownerName} 查看结果…` : `等待 ${ownerName} 行动…`}
+        </p>
         <p className="text-sm text-amber-100/80">
           {ninjaKindLabel(pa.kind)}{variantLabel ? ` · ${variantLabel}` : ''}
         </p>
@@ -949,6 +1081,60 @@ function PendingActionPanel({
     .filter(([, p]) => p.isAlive)
     .map(([id]) => id)
   const variantLabel = pa.variant ? TRICKSTER_LABEL[pa.variant] : ''
+
+  if (pa.step === 'peek_ack') {
+    const targetId = pa.peekTargetId
+    const targetName = targetId ? players[targetId]?.name ?? targetId : '目标'
+    const spyHit =
+      pa.kind === 'spy'
+        ? [...(privateState?.spyReveals ?? [])].reverse().find((r) => r.targetId === targetId)
+        : null
+    const mysticHit =
+      pa.kind === 'mystic'
+        ? [...(privateState?.mysticReveals ?? [])].reverse().find((r) => r.targetId === targetId)
+        : null
+    const house = spyHit?.card ?? mysticHit?.card ?? null
+    const loadingResult = !house
+
+    return (
+      <div className="avalon-card p-4 border border-violet-400/35 bg-violet-950/25 shadow-lg shadow-violet-900/20">
+        <p className="section-label mb-2 text-violet-200">窥探结果（仅你可见）</p>
+        <p className="text-sm text-violet-100/85 mb-3">
+          {pa.kind === 'spy' ? '密探' : '隐士'} · 查看了 {targetName}
+        </p>
+        {loadingResult ? (
+          <p className="text-sm text-slate-400 mb-4">结果同步中…</p>
+        ) : (
+          <div className="mb-4 space-y-2 rounded-xl border border-white/[0.08] bg-black/25 px-3 py-3">
+            <p className="text-sm text-slate-100">
+              流派牌：<HouseCardLabel card={house} />
+            </p>
+            {mysticHit && (
+              <p className="text-sm text-slate-100">
+                随机忍者牌：
+                {mysticHit.ninjaCardKind
+                  ? `${ninjaKindLabel(mysticHit.ninjaCardKind)}${
+                      mysticHit.ninjaCardVariant
+                        ? ` · ${TRICKSTER_LABEL[mysticHit.ninjaCardVariant]}`
+                        : ''
+                    }`
+                  : '（手牌为空）'}
+              </p>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-violet-200/60 mb-3">看清后再点继续，下一张牌才会结算。</p>
+        <button
+          type="button"
+          disabled={loading || loadingResult}
+          onClick={onPeekAck}
+          className="w-full min-h-[44px] btn-primary rounded-xl font-semibold disabled:opacity-50"
+        >
+          我看完了，继续
+        </button>
+      </div>
+    )
+  }
 
   if (pa.step === 'pick_target') {
     // Determine eligible target ids per card type:
@@ -1004,34 +1190,14 @@ function PendingActionPanel({
 
   if (pa.step === 'shinobi_decide') {
     return (
-      <div className="avalon-card p-4 border border-emerald-500/30 bg-emerald-950/15">
-        <p className="section-label mb-2 text-emerald-200">上忍窥探 · 是否暗杀？</p>
-        {peekedHouse ? (
-          <p className="text-sm text-emerald-100/90 mb-2">
-            目标流派：<HouseCardLabel card={peekedHouse} />
-          </p>
-        ) : (
-          <p className="text-xs text-slate-400 mb-2">读取目标流派中…</p>
-        )}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={loading || !peekedHouse}
-            onClick={() => onShinobiDecision(true)}
-            className="min-h-[44px] rounded-xl bg-red-500/20 border border-red-400/40 text-red-100 font-semibold disabled:opacity-50"
-          >
-            暗杀
-          </button>
-          <button
-            type="button"
-            disabled={loading || !peekedHouse}
-            onClick={() => onShinobiDecision(false)}
-            className="min-h-[44px] rounded-xl bg-white/[0.04] border border-white/[0.08] text-slate-200 font-semibold disabled:opacity-50"
-          >
-            放过
-          </button>
-        </div>
-      </div>
+      <ShinobiDecidePanel
+        room={room}
+        playerId={playerId}
+        pa={pa}
+        peekedHouse={peekedHouse}
+        loading={loading}
+        onShinobiDecision={onShinobiDecision}
+      />
     )
   }
 
@@ -1331,19 +1497,215 @@ function PendingActionPanel({
 
 function NightActionLogCard({ room }: { room: NinjaRoom }) {
   const log = room.publicNightLog ?? []
-  if (log.length === 0) return null
+  const groups = useMemo(() => groupPublicNightLog(log), [log])
+  if (groups.length === 0) return null
   return (
     <div className="avalon-card p-4 border border-sky-500/20 bg-sky-950/10">
-      <p className="section-label mb-2 text-sky-200">本回合公开行动</p>
-      <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-        {log.map((e) => (
-          <p key={e.id} className="text-[0.8125rem] text-slate-200/90 leading-snug">
-            {e.text}
-          </p>
+      <p className="section-label mb-3 text-sky-200">本回合公开行动</p>
+      <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-0.5">
+        {groups.map((group, gi) => (
+          <section key={group.key} className={gi > 0 ? 'border-t border-white/[0.08] pt-3' : ''}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className={`rounded px-1.5 py-0.5 text-[0.625rem] font-semibold tracking-wide ${group.badgeClass}`}>
+                {group.title}
+              </span>
+              <span className="h-px flex-1 bg-white/[0.06]" />
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {group.items.map((item) => {
+                if (item.kind === 'skip') {
+                  return (
+                    <li key={item.id} className="text-[0.8125rem] text-slate-400 leading-snug">
+                      无人出牌，跳过此阶段
+                    </li>
+                  )
+                }
+                if (item.kind === 'play') {
+                  return (
+                    <li key={item.id} className="text-[0.8125rem] text-slate-200/90 leading-snug">
+                      <span className="mr-1.5 rounded bg-indigo-400/15 px-1.5 py-0.5 text-[0.625rem] font-medium text-indigo-200">
+                        出牌
+                      </span>
+                      {item.text}
+                    </li>
+                  )
+                }
+                const tag = publicEventTagForGroup(item.event, group.title)
+                const body = stripLeadingCardLabel(item.event.text, item.event.cardLabel)
+                return (
+                  <li key={item.id} className="text-[0.8125rem] text-slate-200/90 leading-snug">
+                    {tag && (
+                      <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[0.625rem] font-medium ${tag.className}`}>
+                        {tag.label}
+                      </span>
+                    )}
+                    {body}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
         ))}
       </div>
     </div>
   )
+}
+
+type PublicLogItem =
+  | { kind: 'skip'; id: string }
+  | { kind: 'play'; id: string; text: string }
+  | { kind: 'event'; id: string; event: NinjaPublicNightEvent }
+
+type PublicLogGroup = {
+  key: string
+  title: string
+  badgeClass: string
+  items: PublicLogItem[]
+}
+
+const PHASE_META: Record<string, { title: string; badgeClass: string }> = {
+  spy: { title: '密探', badgeClass: 'bg-sky-400/20 text-sky-200' },
+  mystic: { title: '隐士', badgeClass: 'bg-violet-400/20 text-violet-200' },
+  trickster: { title: '骗徒', badgeClass: 'bg-amber-400/20 text-amber-200' },
+  blind_assassin: { title: '盲眼刺客', badgeClass: 'bg-rose-400/20 text-rose-200' },
+  shinobi: { title: '上忍', badgeClass: 'bg-emerald-400/20 text-emerald-200' },
+  mastermind: { title: '首脑', badgeClass: 'bg-fuchsia-400/20 text-fuchsia-200' },
+  misc: { title: '其他', badgeClass: 'bg-white/[0.08] text-slate-300' },
+}
+
+function phaseKeyFromHeaderText(text: string): string | null {
+  if (text.startsWith('密探')) return 'spy'
+  if (text.startsWith('隐士')) return 'mystic'
+  if (text.startsWith('骗徒')) return 'trickster'
+  if (text.startsWith('盲眼')) return 'blind_assassin'
+  if (text.startsWith('上忍')) return 'shinobi'
+  if (text.startsWith('首脑')) return 'mastermind'
+  return null
+}
+
+function phaseKeyFromEvent(e: NinjaPublicNightEvent): string | null {
+  if (e.kind === 'mastermind') return 'mastermind'
+  const label = (e.cardLabel ?? '').trim()
+  if (label.includes('密探')) return 'spy'
+  if (label.includes('隐士')) return 'mystic'
+  if (label.includes('上忍')) return 'shinobi'
+  if (label.includes('盲眼') || (label.includes('刺客') && !label.includes('上忍'))) return 'blind_assassin'
+  if (
+    label.includes('盗墓') ||
+    label.includes('变形') ||
+    label.includes('灵商') ||
+    label.includes('盗贼') ||
+    label.includes('麻烦') ||
+    label.includes('审判')
+  ) {
+    return 'trickster'
+  }
+  if (label.includes('首脑')) return 'mastermind'
+  return null
+}
+
+function groupPublicNightLog(log: NinjaPublicNightEvent[]): PublicLogGroup[] {
+  const groups: PublicLogGroup[] = []
+  let current: PublicLogGroup | null = null
+
+  const openGroup = (key: string) => {
+    const meta = PHASE_META[key] ?? PHASE_META.misc
+    if (current?.key === key) return current
+    current = { key, title: meta.title, badgeClass: meta.badgeClass, items: [] }
+    groups.push(current)
+    return current
+  }
+
+  log.forEach((e, index) => {
+    if (e.kind === 'phase_plays' || e.kind === 'phase_skip') {
+      const key = phaseKeyFromHeaderText(e.text) ?? 'misc'
+      const group = openGroup(key)
+      if (e.kind === 'phase_skip') {
+        group.items.push({ kind: 'skip', id: e.id || `skip-${index}` })
+        return
+      }
+      const body = e.text.replace(/^[^：]*：/, '').trim()
+      const plays = body ? body.split('；').map((s) => s.trim()).filter(Boolean) : []
+      plays.forEach((text, pi) => {
+        group.items.push({ kind: 'play', id: `${e.id || index}-play-${pi}`, text })
+      })
+      return
+    }
+
+    const key = phaseKeyFromEvent(e) ?? current?.key ?? 'misc'
+    const group = openGroup(key)
+    group.items.push({ kind: 'event', id: e.id || `evt-${index}`, event: e })
+  })
+
+  return groups.filter((g) => g.items.length > 0)
+}
+
+function publicEventTagForGroup(
+  e: NinjaPublicNightEvent,
+  groupTitle: string
+): { label: string; className: string } | null {
+  const tag = publicEventTag(e)
+  if (!tag) return null
+  // Section already names the phase — prefer action verbs over repeating "密探/隐士".
+  if (tag.label === groupTitle || (groupTitle === '盲眼刺客' && tag.label === '刺客')) {
+    if (e.kind === 'peek') return { label: '窥探', className: 'bg-sky-400/15 text-sky-200' }
+    if (e.kind === 'kill') return { label: '击杀', className: 'bg-rose-400/15 text-rose-200' }
+    if (e.kind === 'reactive') return { label: '反应', className: 'bg-teal-400/15 text-teal-200' }
+    if (e.kind === 'mastermind' || e.kind === 'public_reveal') {
+      return { label: '公开', className: 'bg-fuchsia-400/15 text-fuchsia-200' }
+    }
+    return null
+  }
+  return tag
+}
+
+function publicEventTag(e: NinjaPublicNightEvent): { label: string; className: string } | null {
+  const label = (e.cardLabel ?? '').trim()
+  const lower = label.toLowerCase()
+  if (label.includes('密探') || (e.kind === 'peek' && lower.includes('spy'))) {
+    return { label: '密探', className: 'bg-sky-400/15 text-sky-200' }
+  }
+  if (label.includes('隐士') || (e.kind === 'peek' && lower.includes('mystic'))) {
+    return { label: '隐士', className: 'bg-violet-400/15 text-violet-200' }
+  }
+  if (label.includes('上忍') || label.toLowerCase().includes('shinobi')) {
+    return { label: '上忍', className: 'bg-emerald-400/15 text-emerald-200' }
+  }
+  if (label.includes('盲眼') || label.includes('刺客')) {
+    return { label: '刺客', className: 'bg-rose-400/15 text-rose-200' }
+  }
+  if (label.includes('盗墓')) return { label: '盗墓', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('变形')) return { label: '变形', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('灵商')) return { label: '灵商', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('盗贼')) return { label: '盗贼', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('麻烦')) return { label: '麻烦', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('审判')) return { label: '审判', className: 'bg-amber-400/15 text-amber-200' }
+  if (label.includes('首脑') || e.kind === 'mastermind') {
+    return { label: '首脑', className: 'bg-fuchsia-400/15 text-fuchsia-200' }
+  }
+  if (e.kind === 'phase_plays') return { label: '出牌', className: 'bg-indigo-400/15 text-indigo-200' }
+  if (e.kind === 'phase_skip') return { label: '跳过', className: 'bg-slate-400/15 text-slate-300' }
+  if (e.kind === 'kill') return { label: '击杀', className: 'bg-rose-400/15 text-rose-200' }
+  if (e.kind === 'reactive') return { label: '反应', className: 'bg-teal-400/15 text-teal-200' }
+  if (e.kind === 'steal') return { label: '偷窃', className: 'bg-amber-400/15 text-amber-200' }
+  if (e.kind === 'public_reveal') return { label: '公开', className: 'bg-amber-400/15 text-amber-200' }
+  if (e.kind === 'gravedigger') return { label: '盗墓', className: 'bg-amber-400/15 text-amber-200' }
+  if (e.kind === 'spirit_merchant') return { label: '灵商', className: 'bg-amber-400/15 text-amber-200' }
+  if (e.kind === 'swap_lock') return { label: '交换', className: 'bg-amber-400/15 text-amber-200' }
+  if (e.kind === 'peek') return { label: '窥探', className: 'bg-sky-400/15 text-sky-200' }
+  if (label) return { label: label.replace(/\s*\d+$/, ''), className: 'bg-white/[0.08] text-slate-300' }
+  return null
+}
+
+/** Drop duplicated "Name · Card · …" card segment when a tag already shows the card type. */
+function stripLeadingCardLabel(text: string, cardLabel: string | null | undefined): string {
+  if (!cardLabel) return text
+  // Typical: "Alice · 密探 3 · 查看了 Bob" → keep actor + action after second middle dot pair.
+  const parts = text.split(' · ')
+  if (parts.length >= 3 && parts[1] === cardLabel) {
+    return `${parts[0]} · ${parts.slice(2).join(' · ')}`
+  }
+  return text
 }
 
 function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivateRoundState | null; room: NinjaRoom }) {
@@ -1356,10 +1718,32 @@ function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivate
       reveals.shinobiPeek ||
       reveals.troublemakerPeek ||
       reveals.shapeshifterPeeks)
+  const signature = privateRevealSignature(reveals)
+  const prevSigRef = useRef<string>('')
+  const [flash, setFlash] = useState(false)
+
+  useEffect(() => {
+    if (!signature) {
+      prevSigRef.current = ''
+      return
+    }
+    if (prevSigRef.current && prevSigRef.current !== signature) {
+      setFlash(true)
+      const t = window.setTimeout(() => setFlash(false), 1600)
+      prevSigRef.current = signature
+      return () => window.clearTimeout(t)
+    }
+    prevSigRef.current = signature
+  }, [signature])
+
   if (!hasAny) return null
   const players = room.players ?? {}
   return (
-    <div className="avalon-card p-4 border border-violet-500/25 bg-violet-950/15">
+    <div
+      className={`avalon-card p-4 border border-violet-500/25 bg-violet-950/15 transition-[box-shadow,border-color] duration-300 ${
+        flash ? 'animate-reveal-flash border-violet-300/55 shadow-lg shadow-violet-500/25' : ''
+      }`}
+    >
       <p className="section-label mb-2 text-violet-200">本回合见闻（仅自己可见）</p>
       <div className="flex flex-col gap-1.5 text-[0.8125rem]">
         {reveals?.spyReveals?.map((r, i) => (
@@ -1409,6 +1793,22 @@ function PrivateRevealsCard({ privateState, room }: { privateState: NinjaPrivate
       </div>
     </div>
   )
+}
+
+function privateRevealSignature(reveals: NinjaPrivateRoundState | null): string {
+  if (!reveals) return ''
+  return [
+    reveals.spyReveals?.length ?? 0,
+    reveals.mysticReveals?.length ?? 0,
+    reveals.spiritMerchantViews?.length ?? 0,
+    reveals.shinobiPeek ? `${reveals.shinobiPeek.targetId}:${reveals.shinobiPeek.card.side}:${reveals.shinobiPeek.card.rank}` : '-',
+    reveals.troublemakerPeek
+      ? `${reveals.troublemakerPeek.targetId}:${reveals.troublemakerPeek.card.side}:${reveals.troublemakerPeek.card.rank}`
+      : '-',
+    reveals.shapeshifterPeeks
+      ? `${reveals.shapeshifterPeeks.aId}/${reveals.shapeshifterPeeks.bId}`
+      : '-',
+  ].join('|')
 }
 
 /**
