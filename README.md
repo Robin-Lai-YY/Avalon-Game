@@ -1,4 +1,4 @@
-# Avalon Game
+# Party Games
 
 多人实时派对游戏合集（PWA），目前包含 4 款游戏，使用 Firebase Realtime Database 同步房间与游戏状态。
 
@@ -26,8 +26,8 @@
 ### 1. 克隆与安装
 
 ```bash
-git clone https://github.com/Robin-Lai-YY/Avalon-Game.git
-cd Avalon-Game/avalon-pwa
+git clone https://github.com/Robin-Lai-YY/party-games.git
+cd party-games/avalon-pwa
 npm install
 ```
 
@@ -73,7 +73,7 @@ npm run preview
 ## 项目结构
 
 ```
-Avalon-Game/
+party-games/
 ├── README.md                 # 本文件
 ├── Avalon_Roles.md           # 5–10 人局角色与视角说明
 ├── avalon-pwa/               # 前端 PWA 应用
@@ -116,7 +116,7 @@ npm run test:e2e            # 需先 npm run dev 或复用已有 5173 服务
 
 3. **触发部署**  
    推送 `main` 后会自动跑 **Deploy to GitHub Pages** workflow，部署完成后访问：
-   **https://Robin-Lai-YY.github.io/Avalon-Game/**
+   **https://Robin-Lai-YY.github.io/party-games/**
 
 ## 许可证
 

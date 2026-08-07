@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/Avalon-Game/',
+  base: '/party-games/',
   plugins: [
     react(),
     tailwindcss(),
