@@ -28,12 +28,17 @@ async function syncAvalonSeat(
   playerId: string,
   isHost: boolean,
   uid: string,
-  existingUid?: string
+  existingUid?: string,
+  roomState?: string
 ): Promise<void> {
   const patch: Record<string, string | number> = { lastSeen: Date.now() }
   if (!existingUid) patch.uid = uid
   await update(ref(db, `rooms/${roomId}/players/${playerId}`), patch)
-  await setActiveGame('avalon', roomId, playerId, isHost, uid)
+  if (roomState === 'GAME_END') {
+    await clearActiveGame('avalon', roomId, uid)
+  } else {
+    await setActiveGame('avalon', roomId, playerId, isHost, uid)
+  }
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -185,12 +190,13 @@ export async function joinRoom(roomId: string, name: string): Promise<JoinRoomRe
   if (existingId) {
     const seat = players[existingId]!
     const isHost = room.hostId === existingId
-    await syncAvalonSeat(roomId, existingId, isHost, user.uid, seat.uid)
+    const state = (room.state as string) ?? 'LOBBY'
+    await syncAvalonSeat(roomId, existingId, isHost, user.uid, seat.uid, state)
     return {
       playerId: existingId,
       reconnectToken: seat.reconnectToken ?? generateReconnectToken(),
       isHost,
-      state: room.state ?? 'LOBBY',
+      state,
       rejoined: true,
       seatGeneration: Number(seat.seatGeneration) || 0,
     }

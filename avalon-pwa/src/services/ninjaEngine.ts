@@ -44,12 +44,17 @@ async function syncNinjaSeat(
   playerId: string,
   isHost: boolean,
   uid: string,
-  existingUid?: string
+  existingUid?: string,
+  roomState?: string
 ): Promise<void> {
   const patch: Record<string, string | number> = { lastSeen: Date.now() }
   if (!existingUid) patch.uid = uid
   await update(ref(db, `ninjaRooms/${roomId}/players/${playerId}`), patch)
-  await setActiveGame('ninja', roomId, playerId, isHost, uid)
+  if (roomState === 'GAME_END') {
+    await clearActiveGame('ninja', roomId, uid)
+  } else {
+    await setActiveGame('ninja', roomId, playerId, isHost, uid)
+  }
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -278,7 +283,7 @@ export async function joinNinjaRoom(
   if (existingId) {
     const seat = players[existingId]!
     const isHost = room.hostId === existingId
-    await syncNinjaSeat(roomId, existingId, isHost, user.uid, seat.uid)
+    await syncNinjaSeat(roomId, existingId, isHost, user.uid, seat.uid, room.state)
     return {
       playerId: existingId,
       reconnectToken: seat.reconnectToken,

@@ -26,12 +26,17 @@ async function syncUndercoverSeat(
   playerId: string,
   isHost: boolean,
   uid: string,
-  existingUid?: string
+  existingUid?: string,
+  roomState?: string
 ): Promise<void> {
   const patch: Record<string, string | number> = { lastSeen: Date.now() }
   if (!existingUid) patch.uid = uid
   await update(ref(db, `undercoverRooms/${roomId}/players/${playerId}`), patch)
-  await setActiveGame('undercover', roomId, playerId, isHost, uid)
+  if (roomState === 'END') {
+    await clearActiveGame('undercover', roomId, uid)
+  } else {
+    await setActiveGame('undercover', roomId, playerId, isHost, uid)
+  }
 }
 
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -263,7 +268,7 @@ export async function joinUndercoverRoom(
   if (existingId) {
     const seat = players[existingId]!
     const isHost = room.hostId === existingId
-    await syncUndercoverSeat(roomId, existingId, isHost, user.uid, seat.uid)
+    await syncUndercoverSeat(roomId, existingId, isHost, user.uid, seat.uid, room.state)
     return {
       playerId: existingId,
       reconnectToken: seat.reconnectToken,

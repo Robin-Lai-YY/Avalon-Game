@@ -49,6 +49,7 @@ import {
   loadNinjaSession,
   saveNinjaSession,
 } from './utils/ninjaSessionStorage'
+import { isTerminalState, terminalNotice } from './utils/gameLifecycle'
 import './index.css'
 
 type View =
@@ -459,6 +460,15 @@ export default function App() {
     try {
       const { roomId: rid, playerId: pid, isHost: host, state, reconnectToken, seatGeneration } =
         await reconnectRoom(session.roomId, session.playerId)
+      if (isTerminalState('avalon', state)) {
+        clearSession()
+        await clearActiveGame('avalon', rid).catch(() => {})
+        clearUrlParams()
+        setFailedInitialRestore(false)
+        setHomeNotice(terminalNotice('avalon'))
+        setView('home')
+        return
+      }
       const token = reconnectToken ?? session.reconnectToken
       saveSession(rid, pid, host, token, seatGeneration)
       setRoomId(rid)
@@ -573,6 +583,16 @@ export default function App() {
     seatGeneration?: number
   ) {
     setFailedInitialRestore(false)
+    if (isTerminalState('avalon', state)) {
+      clearSession()
+      if (rid) void clearActiveGame('avalon', rid).catch(() => {})
+      clearUrlParams()
+      setRoomId('')
+      setPlayerId('')
+      setHomeNotice(terminalNotice('avalon'))
+      setView('home')
+      return
+    }
     setRoomId(rid)
     setPlayerId(pid)
     saveSession(rid, pid, host, reconnectToken, seatGeneration)
@@ -618,6 +638,16 @@ export default function App() {
     reconnectToken?: string,
     seatGeneration?: number
   ) {
+    if (isTerminalState('undercover', state)) {
+      clearUndercoverSession()
+      if (rid) void clearActiveGame('undercover', rid).catch(() => {})
+      clearUrlParams()
+      setUndercoverRoomId('')
+      setUndercoverPlayerId('')
+      setUndercoverNotice(terminalNotice('undercover'))
+      setView('undercoverHome')
+      return
+    }
     setUndercoverRoomId(rid)
     setUndercoverPlayerId(pid)
     setUndercoverNotice('')
@@ -697,6 +727,16 @@ export default function App() {
     reconnectToken?: string,
     seatGeneration?: number
   ) {
+    if (isTerminalState('ninja', state)) {
+      clearNinjaSession()
+      if (rid) void clearActiveGame('ninja', rid).catch(() => {})
+      clearUrlParams()
+      setNinjaRoomId('')
+      setNinjaPlayerId('')
+      setNinjaNotice(terminalNotice('ninja'))
+      setView('ninjaHome')
+      return
+    }
     setNinjaRoomId(rid)
     setNinjaPlayerId(pid)
     setNinjaNotice('')
